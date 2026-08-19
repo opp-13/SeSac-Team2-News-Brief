@@ -293,8 +293,9 @@ const BASE = '/api/v1'
 ## 8. Git 규칙
 
 - 브랜치: `feature/web/{작업명}` (루트 §5는 `feature/{module}/{task}` 형식)
-- `main` 직접 push 금지. `develop`에 PR
-- 머지 조건: 리뷰 1인 승인 + CI 통과
+- `main` 직접 push 금지. **기능 브랜치에서 `main`으로 PR** (`develop` 통합 브랜치는 두지 않는다)
+- 머지 조건: 리뷰 1인 승인 + CI 통과. `main`이 배포 기준이므로 CI 실패 상태로 머지하지 않는다
+- 머지 후 기능 브랜치 삭제
 - 커밋: `<type>(<module>): <description>` — 모듈은 `web`
   - 예: `feat(web): 기사 목록 무한스크롤 구현`
 - PR은 300줄 이내 목표
