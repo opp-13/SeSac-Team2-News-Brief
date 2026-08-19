@@ -4,7 +4,6 @@ All HTTP calls live in freenews/client.py -- this module only maps the raw
 article dicts from FreeNewsClient.search_news() into ArticleItems.
 """
 
-
 from freenews import FreeNewsClient
 
 from .base import ArticleItem, NewsProvider

@@ -12,7 +12,9 @@ from providers import CATEGORIES, PROVIDER_NAMES, get_provider
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="카테고리 기반 뉴스 검색 파이프라인 (NAVER + Free News API)")
+    parser = argparse.ArgumentParser(
+        description="카테고리 기반 뉴스 검색 파이프라인 (NAVER + Free News API)"
+    )
     parser.add_argument("--category", choices=CATEGORIES, required=True, help="검색 카테고리")
     parser.add_argument(
         "--provider",
@@ -20,7 +22,9 @@ def parse_args() -> argparse.Namespace:
         default="all",
         help="검색할 provider (기본값 all: 전부 합쳐서 출력)",
     )
-    parser.add_argument("--display", type=int, default=10, help="provider별 검색 결과 개수 (기본값 10)")
+    parser.add_argument(
+        "--display", type=int, default=10, help="provider별 검색 결과 개수 (기본값 10)"
+    )
     parser.add_argument("--with-body", action="store_true", help="본문(body)도 함께 가져옵니다")
     return parser.parse_args()
 
@@ -78,7 +82,6 @@ def main() -> int:
     output_stage(items)
 
     ## TODO: AI 요약 및 번역 모듈 또는 호출 API 추가
-
 
     return 0
 
