@@ -4,7 +4,6 @@ NAVER's news search API has no category concept, so the category string
 (e.g. "technology") is used directly as the free-text search query.
 """
 
-
 from naver_news import NaverNewsClient
 
 from .base import ArticleItem, NewsProvider

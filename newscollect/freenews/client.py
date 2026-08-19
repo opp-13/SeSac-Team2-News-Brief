@@ -3,7 +3,6 @@ providers/freenews_provider.py and details/freenews_detail.py only call
 these methods and map the results, they never call `requests` themselves.
 """
 
-
 import requests
 
 from .config import FreeNewsConfig
