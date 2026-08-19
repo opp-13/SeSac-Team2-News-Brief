@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "newscollect"
+version = "0.1.0"
+description = "카테고리 기반 뉴스 검색 파이프라인 (NAVER + Free News API)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "requests",
+  "python-dotenv",
+  "newspaper3k",
+  "lxml_html_clean",
+]
+
+# ruff는 uv로도 설치 가능
+[project.optional-dependencies]
+dev = ["ruff"]
+
+[project.urls]
+"Homepage" = "https://github.com/opp-13/SeSac-Team2-News-Brief"
+
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["venv", ".venv"]
+
+[tool.ruff.lint]
+select = [
+  "E",    # pycodestyle errors
+  "W",    # pycodestyle warnings
+  "F",    # pyflakes
+  "I",    # isort
+  "UP",   # pyupgrade
+  "B",    # flake8-bugbear
+  "C4",   # flake8-comprehensions
+  "SIM",  # flake8-simplify
+  "RUF",  # ruff-specific rules
+]
+# E501 (line too long)
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Re-export modules: imports exist only to be re-exported via __all__.
+"__init__.py" = ["F401"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["naver_news", "freenews", "providers", "details"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "auto"
