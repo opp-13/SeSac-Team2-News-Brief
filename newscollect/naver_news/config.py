@@ -20,8 +20,6 @@ class NaverAPIConfig:
         client_secret = os.environ.get("NCP_CLIENT_SECRET")
 
         if not client_id or not client_secret:
-            raise ValueError(
-                "NCP_CLIENT_ID / NCP_CLIENT_SECRET 환경변수를 설정해야 합니다."
-            )
+            raise ValueError("NCP_CLIENT_ID / NCP_CLIENT_SECRET 환경변수를 설정해야 합니다.")
 
         return cls(client_id=client_id, client_secret=client_secret)
