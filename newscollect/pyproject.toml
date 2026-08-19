@@ -22,6 +22,8 @@ dev = ["ruff"]
 [project.urls]
 "Homepage" = "https://github.com/opp-13/SeSac-Team2-News-Brief"
 
+[tool.setuptools.packages.find]
+include = ["naver_news*", "freenews*", "providers*", "details*"]
 
 [tool.ruff]
 line-length = 100
