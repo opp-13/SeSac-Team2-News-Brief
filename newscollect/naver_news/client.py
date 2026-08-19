@@ -1,6 +1,6 @@
 """HTTP client for the NAVER API HUB news search endpoint."""
 
-from typing import Literal, Optional
+from typing import Literal
 
 import requests
 
@@ -14,7 +14,7 @@ _NEWS_SEARCH_PATH = "/search/v1/news"
 
 
 class NaverNewsClient:
-    def __init__(self, config: Optional[NaverAPIConfig] = None):
+    def __init__(self, config: NaverAPIConfig | None = None):
         self._config = config or NaverAPIConfig.from_env()
 
     def search(

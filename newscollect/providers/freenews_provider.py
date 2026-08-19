@@ -4,7 +4,6 @@ All HTTP calls live in freenews/client.py -- this module only maps the raw
 article dicts from FreeNewsClient.search_news() into ArticleItems.
 """
 
-from typing import List
 
 from freenews import FreeNewsClient
 
@@ -15,7 +14,7 @@ class FreeNewsProvider(NewsProvider):
     def __init__(self):
         self._client = FreeNewsClient()
 
-    def search_by_category(self, category: str, display: int = 10) -> List[ArticleItem]:
+    def search_by_category(self, category: str, display: int = 10) -> list[ArticleItem]:
         articles = self._client.search_news(topic=category)[:display]
 
         return [

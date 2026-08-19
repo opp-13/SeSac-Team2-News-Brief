@@ -2,7 +2,6 @@
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Optional
 
 # Free News API's topic enum (GET /topics). NAVER has no native category
 # concept, so the category string is used as its search query instead.
@@ -34,7 +33,7 @@ class ArticleItem:
     """Which provider produced this item ("naver" | "freenews") -- picks the detail fetcher."""
     detail_ref: str
     """Opaque reference the detail stage needs: a naver article link, or a freenews uuid."""
-    body: Optional[str] = None
+    body: str | None = None
 
 
 class NewsProvider(ABC):

@@ -3,7 +3,6 @@
 import html
 import re
 from dataclasses import dataclass, field
-from typing import List
 
 _TAG_RE = re.compile(r"<[^>]+>")
 
@@ -38,7 +37,7 @@ class NewsSearchResult:
     total: int
     start: int
     display: int
-    items: List[NewsItem] = field(default_factory=list)
+    items: list[NewsItem] = field(default_factory=list)
 
     @classmethod
     def from_api(cls, data: dict) -> "NewsSearchResult":

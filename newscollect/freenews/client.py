@@ -3,7 +3,6 @@ providers/freenews_provider.py and details/freenews_detail.py only call
 these methods and map the results, they never call `requests` themselves.
 """
 
-from typing import List, Optional
 
 import requests
 
@@ -12,7 +11,7 @@ from .exceptions import FreeNewsAPIError
 
 
 class FreeNewsClient:
-    def __init__(self, config: Optional[FreeNewsConfig] = None):
+    def __init__(self, config: FreeNewsConfig | None = None):
         self._config = config or FreeNewsConfig.from_env()
 
     def _get(self, path: str, params: dict) -> dict:
@@ -32,7 +31,7 @@ class FreeNewsClient:
 
         return response.json()
 
-    def search_news(self, topic: str, language: str = "en", order_by: str = "recent") -> List[dict]:
+    def search_news(self, topic: str, language: str = "en", order_by: str = "recent") -> list[dict]:
         """Return the raw article dicts from GET /news (lightweight: uuid/title/published_at/publisher)."""
         return self._get(
             "/news",

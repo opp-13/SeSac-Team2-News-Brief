@@ -4,7 +4,6 @@ NAVER's news search API has no category concept, so the category string
 (e.g. "technology") is used directly as the free-text search query.
 """
 
-from typing import List
 
 from naver_news import NaverNewsClient
 
@@ -15,7 +14,7 @@ class NaverProvider(NewsProvider):
     def __init__(self):
         self._client = NaverNewsClient()
 
-    def search_by_category(self, category: str, display: int = 10) -> List[ArticleItem]:
+    def search_by_category(self, category: str, display: int = 10) -> list[ArticleItem]:
         result = self._client.search(query=category, display=display, sort="date")
         return [
             ArticleItem(

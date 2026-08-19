@@ -7,8 +7,8 @@ here, so the pipeline shape stays visible instead of hiding inside a class.
 import argparse
 import sys
 
-from providers import CATEGORIES, PROVIDER_NAMES, get_provider
 import details
+from providers import CATEGORIES, PROVIDER_NAMES, get_provider
 
 
 def parse_args() -> argparse.Namespace:

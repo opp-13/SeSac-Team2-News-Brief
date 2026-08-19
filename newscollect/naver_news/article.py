@@ -8,7 +8,6 @@ hosted on `n.news.naver.com` / `news.naver.com` -- for `originallink` pages
 here.
 """
 
-from typing import Optional
 from urllib.parse import urlparse
 
 from newspaper import Article, ArticleException, Config
@@ -21,7 +20,7 @@ def is_naver_news_link(url: str) -> bool:
     return urlparse(url).netloc in _SUPPORTED_HOSTS
 
 
-def fetch_article_body(url: str, timeout: int = 10) -> Optional[str]:
+def fetch_article_body(url: str, timeout: int = 10) -> str | None:
     """Fetch and return the article body text, or None if unavailable/unsupported."""
 
     config = Config()

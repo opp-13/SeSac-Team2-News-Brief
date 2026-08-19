@@ -15,4 +15,4 @@ def get_provider(name: str) -> NewsProvider:
     raise ValueError(f"알 수 없는 provider: {name}")
 
 
-__all__ = ["CATEGORIES", "ArticleItem", "NewsProvider", "PROVIDER_NAMES", "get_provider"]
+__all__ = ["CATEGORIES", "PROVIDER_NAMES", "ArticleItem", "NewsProvider", "get_provider"]
