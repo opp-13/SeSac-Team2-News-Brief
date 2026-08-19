@@ -1,0 +1,109 @@
+import type { Article } from '../types/feed'
+
+// docs/figma-export/data/mockData.ts의 mockArticles를 이관 (frontend/CLAUDE.md §2 규칙3:
+// "src/data/mockData.ts → MSW 핸들러"). 지금은 hooks/useFeed.ts가 이 배열을 직접 감싸 쓰지만,
+// 최종적으로는 이 데이터를 기반으로 한 MSW 핸들러(src/mocks/handlers.ts)가 대체한다.
+// TODO(§9 작업순서 이후 단계): docs/api-contracts/feed.md 확정 후 MSW 핸들러로 교체.
+export const mockArticles: Article[] = [
+  {
+    id: '1',
+    source: 'TechCrunch',
+    category: 'IT',
+    publishedAt: '2026-08-19T10:18:00Z',
+    relativeTime: '12분 전',
+    headline:
+      'OpenAI, GPT-5 출시 일정 공개… "추론 성능 GPT-4o 대비 3배, 코딩·수학 영역 획기적 개선"',
+    tags: ['AI', '개발'],
+    summary:
+      'OpenAI가 차세대 언어 모델 GPT-5의 출시 일정을 공식 발표했다. 회사에 따르면 GPT-5는 기존 GPT-4o 대비 추론 성능이 약 3배 향상됐으며, 복잡한 수학 문제와 코드 생성 영역에서 특히 두드러진 개선을 보인다. API 접근은 9월부터 순차적으로 확대될 예정이다.',
+    url: '#',
+    isNew: true,
+  },
+  {
+    id: '2',
+    source: '한국경제',
+    category: '경제',
+    publishedAt: '2026-08-19T09:45:00Z',
+    relativeTime: '45분 전',
+    headline: '삼성전자, 3분기 HBM4 양산 돌입… SK하이닉스와 엔비디아 납품 경쟁 본격화',
+    tags: ['반도체', '글로벌'],
+    summary:
+      '삼성전자가 3분기부터 HBM4(4세대 고대역폭 메모리) 양산에 돌입한다고 밝혔다. 이에 따라 AI 가속기 시장에서 독주 체제를 유지해온 SK하이닉스와의 엔비디아 납품 경쟁이 한층 치열해질 전망이다. 삼성은 HBM4에서 열 문제를 해결했다고 주장하며 연내 공급 계약 체결에 자신감을 보였다.',
+    url: '#',
+    isNew: true,
+  },
+  {
+    id: '3',
+    source: 'Reuters',
+    category: '글로벌',
+    publishedAt: '2026-08-19T08:30:00Z',
+    relativeTime: '2시간 전',
+    headline: 'EU, AI 법안 시행 첫 해 위반 기업에 총 2.3억 유로 과징금 부과',
+    tags: ['AI', '규제', '글로벌'],
+    summary:
+      'EU 집행위원회가 AI법(AI Act) 시행 첫 해인 2025년에 총 2억 3,000만 유로의 과징금을 부과했다고 발표했다. 위반 사례 대부분은 고위험 AI 시스템의 투명성 의무 미준수와 편향성 평가 보고서 미제출에 집중됐다. 미국 기업 3곳이 전체 과징금의 68%를 차지했다.',
+    url: '#',
+  },
+  {
+    id: '4',
+    source: '블로터',
+    category: 'IT',
+    publishedAt: '2026-08-19T07:15:00Z',
+    relativeTime: '3시간 전',
+    headline: '카카오, AI 에이전트 플랫폼 "카나나" 정식 출시… 월 9,900원 구독 요금제 공개',
+    tags: ['AI', '스타트업'],
+    summary:
+      '카카오가 AI 에이전트 서비스 "카나나"를 정식 출시하며 월 9,900원의 구독 요금제를 발표했다. 카나나는 카카오톡·멜론·카카오맵 등 자사 서비스와 연동해 일정 관리, 쇼핑, 음악 추천 등을 하나의 대화형 인터페이스로 처리할 수 있는 것이 특징이다.',
+    url: '#',
+    isRead: true,
+  },
+  {
+    id: '5',
+    source: 'Wired',
+    category: 'IT',
+    publishedAt: '2026-08-19T06:00:00Z',
+    relativeTime: '4시간 전',
+    headline: 'Anthropic, 클로드 4 멀티모달 업데이트… 실시간 영상 분석 및 도구 호출 대폭 강화',
+    tags: ['AI', '개발'],
+    summary:
+      'Anthropic이 Claude 4 시리즈에 실시간 영상 스트림 분석과 강화된 도구 호출(Tool Use) 기능을 추가하는 대규모 업데이트를 배포했다. 특히 컴퓨터 사용(Computer Use) API가 정식 GA로 전환되며 엔터프라이즈 고객의 RPA 수요를 겨냥한 요금 체계도 개편됐다.',
+    url: '#',
+  },
+  {
+    id: '6',
+    source: '조선비즈',
+    category: '경제',
+    publishedAt: '2026-08-19T05:30:00Z',
+    relativeTime: '4시간 전',
+    headline: '한국은행, 기준금리 2.75% 동결… "내수 회복 지연·가계부채 증가 동시 우려"',
+    tags: ['경제'],
+    summary:
+      '한국은행 금융통화위원회가 이달 기준금리를 연 2.75%로 동결했다. 이창용 총재는 내수 회복이 기대에 미치지 못하는 동시에 가계부채 잔액이 다시 증가세로 전환됐다며 양측 리스크를 모두 고려한 결정이라고 설명했다. 시장은 연내 추가 인하 가능성을 40% 수준으로 보고 있다.',
+    url: '#',
+    isRead: true,
+  },
+  {
+    id: '7',
+    source: 'The Verge',
+    category: 'IT',
+    publishedAt: '2026-08-18T22:00:00Z',
+    relativeTime: '어제',
+    headline: 'Apple, iOS 21 베타에 온디바이스 LLM 추론 탑재 확인… A19 Pro 이상 지원',
+    tags: ['AI', '모바일'],
+    summary:
+      'Apple의 iOS 21 개발자 베타 빌드 분석을 통해 온디바이스 LLM 추론 엔진이 포함된 사실이 확인됐다. A19 Pro 칩 이상 탑재 기기에서만 동작하며, Siri의 복잡한 요청 처리와 메일·메시지 초안 생성에 활용될 전망이다. Apple은 공식 언급을 피하고 있다.',
+    url: '#',
+  },
+  {
+    id: '8',
+    source: '이데일리',
+    category: '정치',
+    publishedAt: '2026-08-18T20:00:00Z',
+    relativeTime: '어제',
+    headline: '국회 AI 기본법 소위, 고위험 AI 정의 놓고 산업계·시민단체 정면충돌',
+    tags: ['AI', '규제', '정치'],
+    summary:
+      '국회 AI 기본법 소위원회에서 고위험 AI의 범위를 두고 산업계와 시민단체 간 이견이 첨예하게 대립했다. 산업계는 현행 초안이 글로벌 경쟁력을 약화시킨다고 주장한 반면, 시민단체는 채용·금융·의료 AI에 대한 규제가 여전히 불충분하다는 입장을 고수했다.',
+    url: '#',
+  },
+]
