@@ -42,7 +42,7 @@
 
 | 담당 | 모듈 코드 | 담당 기능 | 소유 디렉토리 |
 |---|---|---|---|
-| **A** | `collector` | 뉴스 API 연동, 수집 스케줄 대상 정의, 키워드/카테고리/언론사 필터링, 중복 기사 제거, 수집 오류·재시도, 파이프라인 처리 현황 집계 API | `backend/app/modules/collector/*`, `backend/app/batch/collect.py` |
+| **A** | `collector` | 뉴스 API 연동, 수집 스케줄 대상 정의, 키워드/카테고리/언론사 필터링, 중복 기사 제거, 수집 오류·재시도, 파이프라인 처리 현황 집계 API |  `newscollect/*` |
 | **B** | `ai` | Bedrock 요약 생성(한 줄/3줄/상세), 다국어 번역, 요약 검수 플래그, 요약/번역 결과 영구 저장, 호출량·비용 기록 및 임계치 알림 | `backend/app/modules/ai/*`, `backend/app/batch/{summarize,translate}.py` |
 | **C** | `feed` (Backend) | 회원가입/로그인(Redis 세션), 관심 태그 등록·관리, 콘텐츠 큐레이션 배치, 뉴스 피드 조회 API, 원문 링크 제공, 데이터 보관 정책 배치 | `backend/app/modules/{auth,feed}/*`, `backend/app/batch/{curate,retention}.py`, `backend/app/db/migrations` |
 | **D** | `web` (Frontend) | React 앱 전체 — 로그인/회원가입, 마이페이지, 관심 태그 설정, 피드 목록/상세, 북마크, 관리자 모니터링·비용 대시보드 | `frontend/src/**` (아래 공용 영역 제외) |
@@ -50,7 +50,7 @@
 
 ### 프론트/백 경계 운영 (C ↔ D)
 
-C�� D는 같은 기능을 양쪽에서 나눠 갖기 때문에 **API 계약이 곧 인터페이스**다.
+C�� D는 같은 기능을 양쪽에서 나눠 갖기 때문에 **API 계약이 곧 인터페이스**다.
 
 - 화면 하나당 계약을 먼저 확정한다: `docs/api-contracts/feed.md`, `auth.md`, `admin.md`
 - 계약 PR은 **C·D 두 명이 모두 승인**해야 머지된다. 계약 없이 시작한 구현은 반려.
@@ -81,6 +81,8 @@ newsbrief/
 ├── docs/                          # 요구사항 명세서, ERD, DB 스키마, API 계약
 │   ├── db/{schema.sql, ERD.md, seed.sql}
 │   └── api-contracts/{collector,ai,feed,auth,admin}.md
+├── newscollect/                   # 뉴스 수집 파이프라인 (A 소유)
+│   └── {naver_news,freenews,providers,details}/, main.py
 ├── frontend/                      # React 웹 앱 (D 소유)
 │   └── src/{app,routes,pages,components,store,api,types,hooks,constants,utils}/
 │       └── (auth | feed | admin | common) 하위 분리
