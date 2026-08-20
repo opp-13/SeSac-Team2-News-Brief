@@ -13,7 +13,7 @@ frontend/CLAUDE.md §0.2도 구현하지 않기로 정리해 뒀다. 관련 API/
 
 from dataclasses import dataclass, field
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.common.exceptions import NotFoundError
@@ -27,6 +27,7 @@ from app.modules.feed.models.read_only import (
     Translation,
 )
 from app.modules.feed.models.tag import TAG_TYPE_CATEGORY, Tag, UserTag
+from app.modules.feed.services import cursor as cursor_codec
 
 # [PROV-F15] 목록에 노출할 기본 요약 타입. "요약 3종 저장 여부"가 미결이므로 상수로 분리해 둔다.
 LIST_SUMMARY_TYPE = "THREE_LINE"
@@ -141,6 +142,20 @@ def _search_filter(stmt, q: str | None):  # noqa: ANN001, ANN201
     )
 
 
+def _before_cursor(raw_cursor: str | None, id_column):  # noqa: ANN001, ANN201
+    """`published_at DESC, id DESC` 정렬에서 커서 다음 페이지 조건.
+
+    행 값 비교 `(published_at, id) < (p, i)` 를 이식성 있게 풀어 쓴 것이다.
+    """
+    if raw_cursor is None:
+        return None
+    published_at, row_id = cursor_codec.decode(raw_cursor)
+    return or_(
+        Article.published_at < published_at,
+        and_(Article.published_at == published_at, id_column < row_id),
+    )
+
+
 def _pick_category(tags: list[Tag]) -> str | None:
     """카테고리 성격의 태그 이름을 하나 고른다.
 
@@ -164,10 +179,10 @@ def list_feed(
     *,
     user_id: int | None,
     limit: int,
-    cursor: int | None = None,
+    cursor: str | None = None,
     tag: str | None = None,
     q: str | None = None,
-) -> tuple[list[FeedRow], int | None, bool]:
+) -> tuple[list[FeedRow], str | None, bool]:
     """로그인 여부로 두 가지로 동작한다 (`docs/api-contracts/feed.md`).
 
     - 게스트(user_id=None): `articles` 최신순. 커서는 article.id
@@ -196,17 +211,20 @@ def list_feed(
 
 
 def _list_guest(
-    db: Session, *, limit: int, cursor: int | None, tag_id: int | None, q: str | None
-) -> tuple[list[FeedRow], int | None, bool]:
+    db: Session, *, limit: int, cursor: str | None, tag_id: int | None, q: str | None
+) -> tuple[list[FeedRow], str | None, bool]:
     stmt = (
         select(Article)
         # 요약이 끝난 기사만 노출한다(조회 시점 생성 금지 — CLAUDE.md §1).
         .where(Article.status.in_(FEED_READY_STATUSES))
-        .order_by(Article.id.desc())
+        # 발행 최신순. id는 수집 순서라 발행 순서와 다르다 — id로 정렬하면 오래된 기사가
+        # 맨 위로 온다. id는 같은 시각일 때의 안정적 타이브레이커로만 쓴다.
+        .order_by(Article.published_at.desc(), Article.id.desc())
         .limit(limit + 1)
     )
-    if cursor is not None:
-        stmt = stmt.where(Article.id < cursor)
+    before = _before_cursor(cursor, Article.id)
+    if before is not None:
+        stmt = stmt.where(before)
     if tag_id is not None:
         stmt = stmt.where(
             Article.id.in_(select(ArticleTag.article_id).where(ArticleTag.tag_id == tag_id))
@@ -246,7 +264,11 @@ def _list_guest(
         )
         for article in articles
     ]
-    next_cursor = result[-1].article.id if result and has_next else None
+    next_cursor = (
+        cursor_codec.encode(result[-1].article.published_at, result[-1].article.id)
+        if result and has_next
+        else None
+    )
     return result, next_cursor, has_next
 
 
@@ -255,19 +277,22 @@ def _list_personal(
     *,
     user_id: int,
     limit: int,
-    cursor: int | None,
+    cursor: str | None,
     tag_id: int | None,
     q: str | None,
-) -> tuple[list[FeedRow], int | None, bool]:
+) -> tuple[list[FeedRow], str | None, bool]:
     stmt = (
         select(FeedItem, Article)
         .join(Article, Article.id == FeedItem.article_id)
         .where(FeedItem.user_id == user_id)
-        .order_by(FeedItem.id.desc())
+        # 게스트와 같은 기준(발행 최신순)이다. 피드 행 생성 순서가 아니라 기사 발행 순서로
+        # 보여야 사용자가 기대하는 순서가 된다.
+        .order_by(Article.published_at.desc(), FeedItem.id.desc())
         .limit(limit + 1)  # has_next 판별용 1건 초과 조회
     )
-    if cursor is not None:
-        stmt = stmt.where(FeedItem.id < cursor)
+    before = _before_cursor(cursor, FeedItem.id)
+    if before is not None:
+        stmt = stmt.where(before)
     if tag_id is not None:
         # 기사에 붙은 태그로 거른다 — 게스트 경로(`_list_guest`)와 같은 기준이다.
         #
@@ -311,7 +336,12 @@ def _list_personal(
             )
         )
 
-    next_cursor = result[-1].feed_item.id if result and result[-1].feed_item and has_next else None
+    last = result[-1] if result else None
+    next_cursor = (
+        cursor_codec.encode(last.article.published_at, last.feed_item.id)
+        if last and last.feed_item and has_next
+        else None
+    )
     return result, next_cursor, has_next
 
 

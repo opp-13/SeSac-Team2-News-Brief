@@ -33,7 +33,7 @@ class FeedItemResponse(ApiModel):  # [PROV-F11]
 class FeedListResponse(ApiModel):  # [PROV-F13]
     # [PROV-F05] 커서 기반으로 임시 구현. D가 offset/page 방식을 확정하면 교체한다.
     items: list[FeedItemResponse]
-    next_cursor: int | None = None
+    next_cursor: str | None = None
     has_next: bool = False
 
 

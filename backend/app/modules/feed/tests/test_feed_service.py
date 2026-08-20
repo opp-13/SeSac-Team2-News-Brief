@@ -6,6 +6,7 @@ import pytest
 
 from app.common.exceptions import NotFoundError
 from app.modules.feed.models.feed_item import FeedItem
+from app.modules.feed.models.read_only import Article
 from app.modules.feed.services import feed_service
 
 
@@ -107,3 +108,81 @@ def test_user_without_interest_tags_gets_the_guest_list(db, seed):
     assert rows  # 빈 목록이면 폴백이 의미가 없다
     # 피드 행이 아니므로 feed_item은 None이고, 프론트는 feedItemId를 null로 받는다.
     assert all(r.feed_item is None for r in rows)
+
+
+def _extra_article(db, seed, *, title, hours_newer, url_suffix):
+    """seed 기사보다 hours_newer 시간 뒤에 발행된 기사를 추가한다."""
+    from datetime import timedelta
+
+    from app.modules.feed.models.read_only import Article, ArticleTag, Summary
+
+    base = seed["article"]
+    a = Article(
+        title=title,
+        url=f"https://news.example.com/{url_suffix}",
+        url_hash=str(url_suffix) * 8 + "c" * (64 - len(str(url_suffix)) * 8),
+        source_id=base.source_id,
+        language="ko",
+        status="SUMMARIZED",
+        published_at=base.published_at + timedelta(hours=hours_newer),
+    )
+    db.add(a)
+    db.flush()
+    db.add(ArticleTag(article_id=a.id, tag_id=seed["tag"].id))
+    db.add(
+        Summary(
+            article_id=a.id,
+            summary_type="THREE_LINE",
+            content=f"{title} 요약",
+            language="ko",
+            provider="anthropic",
+            model_name="claude-sonnet-5",
+            created_at=base.published_at,
+        )
+    )
+    db.flush()
+    return a
+
+
+def test_feed_is_ordered_newest_first(db, seed):
+    """발행 최신순으로 나온다 — id 순서가 아니다.
+
+    회귀 방지: 이전에는 `id DESC`로 정렬했는데, id는 수집 순서라 발행 순서와 다르다.
+    시드처럼 최신 기사가 먼저 INSERT되면 id DESC가 **가장 오래된 기사를 맨 위**에 올렸다.
+    """
+    newer = _extra_article(db, seed, title="더 최신 기사", hours_newer=5, url_suffix=91)
+    older = _extra_article(db, seed, title="더 오래된 기사", hours_newer=-5, url_suffix=92)
+
+    # id는 나중에 만든 older가 더 크다 — id 정렬이면 older가 위로 온다.
+    assert older.id > newer.id
+
+    rows, _, _ = feed_service.list_feed(db, user_id=None, limit=10)
+    ids = [r.article.id for r in rows]
+    assert ids.index(newer.id) < ids.index(older.id)
+    assert rows[0].article.id == newer.id
+
+
+def test_cursor_pagination_walks_without_gaps_or_repeats(db, seed):
+    """커서로 이어 읽어도 빠지거나 겹치는 기사가 없다."""
+    _extra_article(db, seed, title="A", hours_newer=5, url_suffix=93)
+    _extra_article(db, seed, title="B", hours_newer=-5, url_suffix=94)
+
+    seen: list[int] = []
+    cursor = None
+    for _ in range(10):
+        rows, cursor, has_next = feed_service.list_feed(db, user_id=None, limit=2, cursor=cursor)
+        seen.extend(r.article.id for r in rows)
+        if not has_next:
+            break
+
+    all_ids = [a.id for a in db.query(Article).all()]
+    assert sorted(seen) == sorted(all_ids)   # 빠진 것 없음
+    assert len(seen) == len(set(seen))       # 겹친 것 없음
+
+
+def test_malformed_cursor_is_rejected(db, seed):
+    """실패 경로: 깨진 커서는 INVALID_CURSOR로 거부한다 (계약 정의)."""
+    from app.common.exceptions import BadRequestError
+
+    with pytest.raises(BadRequestError):
+        feed_service.list_feed(db, user_id=None, limit=10, cursor="!!not-a-cursor!!")

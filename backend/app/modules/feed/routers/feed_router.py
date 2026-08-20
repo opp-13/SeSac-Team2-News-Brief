@@ -18,7 +18,7 @@ router = APIRouter(prefix=api_paths.FEED_PREFIX, tags=["feed"])
 
 @router.get(api_paths.FEED_LIST, response_model=FeedListResponse)
 def list_feed(
-    cursor: int | None = Query(default=None),
+    cursor: str | None = Query(default=None),
     limit: int = Query(default=api_paths.DEFAULT_PAGE_SIZE, ge=1, le=api_paths.MAX_PAGE_SIZE),
     tag: str | None = Query(default=None, description="태그/카테고리 이름. 생략 = 전체"),
     q: str | None = Query(default=None, description="제목·언론사 검색어"),

@@ -21,13 +21,13 @@ interface BackendFeedItem {
 
 interface BackendFeedList {
   items: BackendFeedItem[]
-  nextCursor: number | null
+  nextCursor: string | null
   hasNext: boolean
 }
 
 export interface FeedPage {
   articles: Article[]
-  nextCursor: number | null
+  nextCursor: string | null
   hasNext: boolean
 }
 
@@ -36,7 +36,8 @@ export interface FetchFeedParams {
   tag?: string
   /** 검색어 (헤더 입력창 → URL `?q=`). */
   query?: string
-  cursor?: number | null
+  /** 이전 응답의 nextCursor. 서버가 만든 불투명 문자열이라 파싱하지 않는다. */
+  cursor?: string | null
   limit?: number
 }
 
@@ -69,7 +70,7 @@ export async function fetchFeed(params: FetchFeedParams = {}): Promise<FeedPage>
   const search = new URLSearchParams()
   if (params.tag) search.set('tag', params.tag)
   if (params.query?.trim()) search.set('q', params.query.trim())
-  if (params.cursor != null) search.set('cursor', String(params.cursor))
+  if (params.cursor) search.set('cursor', params.cursor)
   if (params.limit != null) search.set('limit', String(params.limit))
 
   const qs = search.toString()
