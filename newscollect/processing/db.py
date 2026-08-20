@@ -27,6 +27,11 @@ TRANSLATION_FAILURE_PREFIX = "(번역 실패:"
 # (main.py owns calling the summarizer; this module only writes to MySQL).
 _GROQ_MODEL = "openai/gpt-oss-20b"
 
+# Keep in sync with processing/translate.py -- that's the stage that actually
+# fills item.title_ko/summary_ko before persist_stage runs (it overwrites
+# whatever summarize_and_translate.summarize_item() set, since it runs after).
+_TRANSLATE_MODEL_ID = "googletrans"
+
 
 def _db_config() -> dict:
     return {
@@ -141,8 +146,8 @@ def _upsert_summary(cursor, article_id: int, item) -> tuple[int, bool] | None:
     cursor.execute(
         """
         INSERT INTO summaries
-            (article_id, summary_type, content, language, provider, model_name, review_status)
-        VALUES (%s, 'THREE_LINE', %s, %s, 'groq', %s, 'PENDING')
+            (article_id, summary_type, content, language, model_id, review_status)
+        VALUES (%s, 'THREE_LINE', %s, %s, %s, 'PENDING')
         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
         """,
         (
@@ -167,14 +172,18 @@ def _insert_translation(cursor, summary_id: int, item) -> None:
     if not summary_ko or summary_ko.startswith(TRANSLATION_FAILURE_PREFIX):
         return
 
+    title_ko = getattr(item, "title_ko", None)
+    if not title_ko or title_ko.startswith(TRANSLATION_FAILURE_PREFIX):
+        title_ko = None
+
     cursor.execute(
         """
         INSERT INTO translations
-            (summary_id, target_language, translated_content, provider, model_name, status)
-        VALUES (%s, 'ko', %s, 'google', 'translate_v2', 'DONE')
+            (summary_id, target_language, translated_title, translated_content, model_id, status)
+        VALUES (%s, 'ko', %s, %s, %s, 'DONE')
         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
         """,
-        (summary_id, summary_ko),
+        (summary_id, title_ko, summary_ko, _TRANSLATE_MODEL_ID),
     )
     cursor.execute(
         "UPDATE articles SET status = 'TRANSLATED' WHERE id = "
