@@ -66,7 +66,15 @@ export default function SettingsPage() {
   }
 
   const handleSave = () => {
-    saveMutation.mutate(selected, { onSuccess: () => setSaved(true) })
+    // 저장 성공하면 피드로 보낸다. 관심 태그를 바꾸는 목적이 "그래서 뭐가 보이는지"를
+    // 확인하는 것이라, 설정 화면에 남겨두면 결과를 보려고 한 번 더 이동해야 한다.
+    // 서버가 저장과 동시에 피드를 다시 만들어 주므로(PUT /me/tags) 바로 반영된 목록이 뜬다.
+    saveMutation.mutate(selected, {
+      onSuccess: () => {
+        setSaved(true)
+        navigate('/')
+      },
+    })
   }
 
   return (
