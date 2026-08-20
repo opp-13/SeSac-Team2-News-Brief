@@ -75,7 +75,7 @@ class EnvelopeMiddleware(BaseHTTPMiddleware):
 
         # 본문 없는 성공 응답(204 등)은 data: null 로 정규화한다.
         if not body:
-            return JSONResponse(success(None), status_code=200)
+            return _wrap(response, success(None))
 
         content_type = response.headers.get("content-type", "")
         if "application/json" not in content_type:
@@ -88,15 +88,44 @@ class EnvelopeMiddleware(BaseHTTPMiddleware):
             logger.warning("JSON 응답을 파싱하지 못해 래핑을 건너뜁니다: %s", request.url.path)
             return _passthrough(response, body)
 
-        return JSONResponse(success(payload), status_code=200)
+        return _wrap(response, success(payload))
+
+
+def _carry_over_headers(source, target: Response) -> None:  # noqa: ANN001
+    """원본 응답의 헤더를 새 응답으로 옮긴다.
+
+    **왜 필요한가**: 라우터가 `response.set_cookie()`로 붙인 `Set-Cookie`가 여기서
+    유실되면 로그인이 되지 않는다(응답은 200인데 세션 쿠키가 없어 다음 요청이 401).
+    실제로 이 누락 때문에 로그인 → /auth/me 흐름이 깨졌다.
+
+    `dict(headers)`를 쓰지 않는 이유: 같은 이름의 헤더가 여러 개일 수 있고(Set-Cookie가
+    대표적) dict로 만들면 하나만 남는다. 그래서 raw_headers를 그대로 옮긴다.
+
+    content-length / content-type은 옮기지 않는다 — 본문을 새로 만들었으므로
+    새 응답이 계산한 값이 맞다.
+    """
+    skip = {b"content-length", b"content-type"}
+    for key, value in source.raw_headers:
+        if key.lower() not in skip:
+            target.raw_headers.append((key, value))
+
+
+def _wrap(source, payload: dict) -> Response:  # noqa: ANN001
+    """봉투를 씌운 새 응답을 만들되 원본 헤더(쿠키 등)를 잃지 않는다."""
+    wrapped = JSONResponse(payload, status_code=200)
+    _carry_over_headers(source, wrapped)
+    return wrapped
 
 
 def _passthrough(response, body: bytes) -> Response:  # noqa: ANN001
     """본문을 이미 읽어버린(body_iterator를 소비한) 응답을 그대로 다시 만들어 준다."""
-    headers = dict(response.headers)
-    # 본문을 다시 만들면 starlette이 길이를 새로 계산하므로 기존 값을 지운다.
-    headers.pop("content-length", None)
-    return Response(content=body, status_code=response.status_code, headers=headers)
+    out = Response(
+        content=body,
+        status_code=response.status_code,
+        media_type=response.headers.get("content-type"),
+    )
+    _carry_over_headers(response, out)
+    return out
 
 
 def register_exception_handlers(app: FastAPI) -> None:
