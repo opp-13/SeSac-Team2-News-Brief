@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import { useSaveUserTags } from '../../hooks/useSaveUserTags'
-import { ALL_TAGS } from '../../constants/tags'
+import { useTags } from '../../hooks/useTags'
 import { colors, typeScale, radius } from '../../constants/theme'
+import { errorMessage } from '../../utils/apiError'
 
 // docs/figma-export/pages/SettingsPage.tsx 이식.
 //
@@ -12,8 +13,9 @@ import { colors, typeScale, radius } from '../../constants/theme'
 // auth 세션 캐시의 userTags 필드를 갱신), named export → default export,
 // 하드코딩 색상 → theme.ts 토큰(정확히 일치하는 것만).
 //
-// ALL_TAGS(선택 가능한 전체 태그 목록)는 서버 데이터가 아니라 고정 상수라
-// TanStack Query 대상이 아니라고 판단했다 — constants/tags.ts 참고.
+// 선택 가능한 태그는 서버 tags 테이블이 진실이다(hooks/useTags.ts). 예전에는
+// constants/tags.ts의 고정 상수를 썼는데, 상수와 DB가 갈라지면 없는 태그를 저장하려
+// 해서 조용히 실패한다(api/tags.ts toTagIds가 매칭 안 되는 이름을 버린다).
 //
 // 세션 로딩 중엔 "로그인이 필요합니다"를 성급하게 보여주지 않는다 — 실제로는
 // 로그인 상태인데 세션 조회가 아직 안 끝났을 때 잘못된 화면이 잠깐 보이는 걸
@@ -22,10 +24,15 @@ export default function SettingsPage() {
   const navigate = useNavigate()
   const { user, isLoggedIn, isLoading: isSessionLoading } = useAuth()
   const saveMutation = useSaveUserTags()
+  const { data: allTags = [] } = useTags()
 
   const [selected, setSelected] = useState<string[]>([])
   const [hasSeeded, setHasSeeded] = useState(false)
   const [saved, setSaved] = useState(false)
+  const saveError = errorMessage(
+    saveMutation.error,
+    '저장에 실패했습니다. 네트워크 상태를 확인해주세요.',
+  )
 
   // 세션이 로드되면 사용자의 현재 관심 태그로 딱 한 번만 시드한다 — RetentionPage와
   // 같은 이유로, 이후 백그라운드 재검증이 편집 중인 선택을 덮어쓰지 않게 한다.
@@ -80,7 +87,7 @@ export default function SettingsPage() {
         </h2>
 
         <div className="flex flex-wrap gap-2 mb-6">
-          {ALL_TAGS.map((tag) => (
+          {allTags.map(({ name: tag }) => (
             <button
               key={tag}
               onClick={() => toggle(tag)}
@@ -111,6 +118,17 @@ export default function SettingsPage() {
           {saved && (
             <span className="text-[13px]" style={{ color: colors.status.success.text }}>
               저장되었습니다
+            </span>
+          )}
+          {/* 저장 실패도 알려준다. 이전에는 성공만 표시해서, 실패하면 버튼만 되돌아오고
+              사용자는 저장된 줄 알았다. */}
+          {saveError && (
+            <span
+              role="alert"
+              className="text-[13px]"
+              style={{ color: colors.status.error.text }}
+            >
+              {saveError}
             </span>
           )}
         </div>

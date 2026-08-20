@@ -11,10 +11,15 @@ function renderApp() {
   )
 }
 
+// 기본값은 "실제 백엔드 호출"이다. VITE_USE_MSW=true 일 때만 목업이 뜬다 —
+// 켜져 있으면 실제 API 응답을 가로채므로 백엔드 연동 확인이 불가능해진다.
+// (프로덕션 빌드에서는 값과 무관하게 절대 시작하지 않는다.)
 async function enableMocking() {
   if (!import.meta.env.DEV) return
+  if (import.meta.env.VITE_USE_MSW !== 'true') return
   const { worker } = await import('./mocks/browser')
   await worker.start({ onUnhandledRequest: 'bypass' })
+  console.info('[MSW] 목업 모드로 실행 중입니다. 실제 백엔드를 쓰려면 VITE_USE_MSW=false')
 }
 
 // worker.start()가 실패해도(서비스워커 등록 실패 등) 앱은 반드시 렌더링된다 —

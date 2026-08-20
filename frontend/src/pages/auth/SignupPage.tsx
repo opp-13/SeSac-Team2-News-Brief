@@ -1,13 +1,14 @@
 import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSignup } from '../../hooks/useSignup'
-import { ALL_TAGS } from '../../constants/tags'
+import { useTags } from '../../hooks/useTags'
 import { colors, typeScale, radius } from '../../constants/theme'
+import { errorMessage } from '../../utils/apiError'
 
 // docs/figma-export/pages/SignupPage.tsx 이식.
 //
 // §2 표 적용: navigate/onLogin prop → useNavigate()/useSignup()(TanStack Query,
-// hooks/useSignup.ts — LoginPage의 useLogin과 같은 패턴), ALL_TAGS는 SettingsPage
+// hooks/useSignup.ts — LoginPage의 useLogin과 같은 패턴), 선택 가능한 태그는 서버(useTags)에서 받는다. SettingsPage
 // 때 옮긴 constants/tags.ts를 재사용, named export → default export, 하드코딩 색상 →
 // theme.ts 토큰(정확히 일치하는 것만).
 //
@@ -17,10 +18,14 @@ import { colors, typeScale, radius } from '../../constants/theme'
 export default function SignupPage() {
   const navigate = useNavigate()
   const signupMutation = useSignup()
+  const { data: allTags = [] } = useTags()
 
   const [step, setStep] = useState<1 | 2>(1)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  // users.nickname은 NOT NULL이고 백엔드 SignupRequest의 필수 필드다.
+  // 받지 않으면 회원가입이 422로 실패한다.
+  const [nickname, setNickname] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
 
   const toggleTag = (tag: string) => {
@@ -29,16 +34,22 @@ export default function SignupPage() {
 
   const handleStep1 = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (email && password.length >= 8) setStep(2)
+    if (email && nickname.trim() && password.length >= 8) setStep(2)
   }
 
   const handleFinish = () => {
     signupMutation.mutate(
-      { email, password, userTags: selectedTags },
+      { email, password, nickname: nickname.trim(), userTags: selectedTags },
       { onSuccess: () => navigate('/') },
     )
   }
 
+  // 가입 실패(이메일 중복 등)를 화면에 띄운다. 이전에는 실패해도 아무 표시가 없어서
+  // 버튼만 되돌아왔다 — 서버는 409 EMAIL_ALREADY_EXISTS를 내려주고 있었다.
+  const error = errorMessage(
+    signupMutation.error,
+    '회원가입에 실패했습니다. 네트워크 상태를 확인해주세요.',
+  )
   const loading = signupMutation.isPending
 
   return (
@@ -110,6 +121,25 @@ export default function SignupPage() {
                     className="block text-slate-700 mb-1.5"
                     style={{ fontSize: 14, fontWeight: 500 }}
                   >
+                    닉네임
+                  </label>
+                  <input
+                    type="text"
+                    value={nickname}
+                    onChange={(e) => setNickname(e.target.value)}
+                    placeholder="피드에 표시될 이름"
+                    maxLength={50}
+                    className="w-full h-10 px-3 rounded-lg border border-slate-200 text-slate-900 placeholder-slate-400 outline-none focus:border-cyan-800 focus:ring-1 focus:ring-cyan-800 transition-colors"
+                    style={{ fontSize: 14, borderRadius: radius.control }}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label
+                    className="block text-slate-700 mb-1.5"
+                    style={{ fontSize: 14, fontWeight: 500 }}
+                  >
                     비밀번호
                   </label>
                   <input
@@ -146,7 +176,7 @@ export default function SignupPage() {
               </p>
 
               <div className="flex flex-wrap gap-2 mb-6">
-                {ALL_TAGS.map((tag) => (
+                {allTags.map(({ name: tag }) => (
                   <button
                     key={tag}
                     onClick={() => toggleTag(tag)}
@@ -167,6 +197,16 @@ export default function SignupPage() {
 
               {selectedTags.length === 0 && (
                 <p className="text-slate-400 text-[13px] mb-4">나중에 설정에서 변경할 수 있어요</p>
+              )}
+
+              {error && (
+                <p
+                  role="alert"
+                  className="text-[13px] mb-3"
+                  style={{ color: colors.status.error.text }}
+                >
+                  {error}
+                </p>
               )}
 
               <div className="flex gap-2">

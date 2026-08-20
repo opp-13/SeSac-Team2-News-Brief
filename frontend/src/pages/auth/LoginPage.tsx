@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useLogin } from '../../hooks/useLogin'
 import { colors, typeScale, radius } from '../../constants/theme'
+import { errorMessage } from '../../utils/apiError'
 
 export default function LoginPage() {
   const navigate = useNavigate()
@@ -23,7 +24,13 @@ export default function LoginPage() {
     )
   }
 
-  const error = validationError
+  // 입력 검증 오류가 우선이고, 그 다음이 서버 응답이다.
+  // 이전에는 validationError만 봐서 **비밀번호가 틀려도 화면에 아무것도 뜨지 않았다** —
+  // 서버는 401 + "이메일 또는 비밀번호가 올바르지 않습니다."를 정상적으로 내려주고 있었는데
+  // 프런트가 그걸 버리고 있었다.
+  const error =
+    validationError ||
+    errorMessage(loginMutation.error, '로그인에 실패했습니다. 네트워크 상태를 확인해주세요.')
   const loading = loginMutation.isPending
 
   return (
@@ -89,7 +96,8 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="text-[13px]" style={{ color: colors.status.error.text }}>
+              // role="alert": 제출 후 나타나는 메시지라 스크린리더가 읽어줘야 한다.
+              <p role="alert" className="text-[13px]" style={{ color: colors.status.error.text }}>
                 {error}
               </p>
             )}
