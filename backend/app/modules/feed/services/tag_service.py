@@ -15,7 +15,13 @@ from app.modules.feed.services import curation_service
 
 
 def list_all_tags(db: Session) -> list[Tag]:
-    return list(db.scalars(select(Tag).order_by(Tag.name)))
+    """선택 가능한 태그 목록.
+
+    `is_active`인 것만 내려준다. `tags`에는 수집기가 쓰는 카테고리 전체(63개)가 들어 있지만
+    그걸 다 필터 칩으로 늘어놓지 않는다 — `is_active`는 **화면 노출 여부**만 뜻하고,
+    수집기는 비활성 태그로도 기사를 태깅한다(데이터는 쌓인다).
+    """
+    return list(db.scalars(select(Tag).where(Tag.is_active.is_(True)).order_by(Tag.name)))
 
 
 def list_user_tags(db: Session, user_id: int) -> list[Tag]:

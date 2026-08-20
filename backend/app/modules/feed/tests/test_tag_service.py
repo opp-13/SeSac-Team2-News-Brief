@@ -114,3 +114,20 @@ def test_unknown_tag_id_is_rejected_without_touching_existing(db, seed):
         tag_service.replace_user_tags(db, user, [seed["tag"].id, 999_999])
 
     assert [t.name for t in tag_service.list_user_tags(db, user.id)] == ["AI"]
+
+
+def test_list_all_tags_hides_inactive(db, seed):
+    """선택 가능한 태그 목록은 활성 태그만 내려준다.
+
+    `tags`에는 수집기가 쓰는 카테고리 전체가 들어 있지만(현재 63개) 필터 칩에 다 늘어놓지
+    않는다. `is_active`는 화면 노출 여부만 뜻하고, 수집기는 비활성 태그로도 태깅한다.
+    """
+    from app.modules.feed.models.tag import TAG_TYPE_CATEGORY, Tag
+
+    db.add(Tag(name="크리켓", slug="cricket", tag_type=TAG_TYPE_CATEGORY, is_active=False))
+    db.flush()
+
+    names = [t.name for t in tag_service.list_all_tags(db)]
+
+    assert "크리켓" not in names
+    assert "AI" in names  # conftest의 활성 태그는 그대로 보인다
