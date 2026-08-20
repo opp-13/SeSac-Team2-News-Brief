@@ -14,18 +14,17 @@ pip install -e ".[dev]"        # ruff 포함 설치
 
 `.env.example`을 복사해 `.env`를 만들고 값을 채운다.
 
-```
-NCP_CLIENT_ID=...
-NCP_CLIENT_SECRET=...
-FREENEWS_API_KEY=...
-```
-
-Deploy 환경의 경우 아래 의존성 추가 필요
+만약 번역/요약/DB 저장/유사도 dedup까지 하려면 아래 명령어로 의존성을 완성시킵니다.
 
 ```bash
-# GPU인스턴스가 아닐 경우 CPU 전용 torch를 우선 깔 것 (disk 용량 절약)
+# GPU 인스턴스가 아니면 CPU 전용 torch를 먼저 깔 것 (용량 최적화)
 pip install torch --index-url https://download.pytorch.org/whl/cpu
-pip install -e ".[deploy]"   # sentence-transformers, scikit-learn, pymysql
+pip install -e ".[deploy]"   # pymysql, googletrans, sentence-transformers, scikit-learn
+```
+
+
+```bash
+mysql -h 127.0.0.1 -u root news_ai < seed_mock.sql
 ```
 
 ## CLI 사용법
@@ -66,7 +65,9 @@ ruff format .         # 포매팅
 
 ## 참고
 
-- `naver_news/article.py`의 본문 조회는 newspaper3k를 통한다. 따라서 본문을 제대로 못가져올 위험성이 있다. 
-- `main.py` TODO 구현 필요 (구현 될 부분에 맞추어 코드 구조 수정할 가능성 있음)
-    - 유사도 기반 중복 기사 제거
-    - AI 요약/번역
+- `naver_news/article.py`의 본문 조회는 newspaper3k를 통한다. 따라서 본문을 제대로 못가져올 위험성이 있다.
+- `main.py`는 검색 → 유사도 dedup → (옵션)본문조회 → 요약 → 번역 → DB 저장 → 출력 순으로 돈다. 각 스테이지는 `processing/`의 별도 모듈이고, `main.py`가 명시적으로 순서대로 호출한다.
+- `processing/`은 `sentence_similarity/`의 두 파일(`cosine_similarity.py`, `summarize_and_translate.py`)을 **복사**해온 것 + 우리가 새로 만든 `translate.py`/`db.py`로 구성된다. `sentence_similarity/`의 원본은 안 건드렸고, `processing/` 쪽 사본만 실제 스키마/모델에 맞게 고쳐서 쓴다 (`cosine_similarity.py`는 DB 연결 방식과 태그 조인 쿼리를, `summarize_and_translate.py`는 deprecate된 `GROQ_MODEL` 값을 수정함).
+- `translate.py`는 `item.summary`(Groq 요약)를 googletrans로 한국어로 번역해서 `item.summary_ko`를 채운다. `item.language`가 이미 `"ko"`면 건너뛴다 (naver는 항상 ko, freenews는 `--language`로 실제 검색한 언어). `googletrans`는 4.x부터 async 전용이라 내부적으로 `asyncio.run()`으로 감싸져 있지만, `translate_stage()` 자체는 동기 함수라 파이프라인 나머지와 동일하게 쓴다.
+- 요약/번역은 실패해도 예외를 던지지 않고 `item.summary`/`item.summary_ko`에 `"(요약 실패: ...)"`/`"(번역 실패: ...)"` 문자열을 넣는다. `db.py`는 이 패턴을 보고 해당 기사를 `articles.status='FAILED'`로 표시하고 summaries/translations 저장을 건너뛴다.
+- `articles.url_hash`가 UNIQUE라서 완전히 같은 URL 재수집은 DB가 알아서 upsert로 걸러준다 (재실행해도 안전). 이것과 별개로 `cosine_similarity.py`의 `dedup_stage`는 URL이 달라도 내용이 사실상 같은 기사(예: 여러 언론사가 같은 통신사 기사를 재배포)를 `sentence-transformers` 임베딩 + 코사인 유사도(`SIMILARITY_THRESHOLD=0.8`)로 걸러낸다. 같은 `--category` 태그로 DB에 이미 있는 기사 제목과 이번 배치 제목을 비교하는 방식이라, `sentence-transformers`/`torch`를 로드하므로 매 실행마다 첫 로딩이 느리다.

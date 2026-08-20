@@ -83,6 +83,9 @@ class ArticleItem:
     """Which provider produced this item ("naver" | "freenews") -- picks the detail fetcher."""
     detail_ref: str
     """Opaque reference the detail stage needs: a naver article link, or a freenews uuid."""
+    language: str
+    """Actual language of title/body ("ko" | "en") -- naver is always "ko"; for freenews
+    this is whatever --language was actually searched with, not a provider-based guess."""
     body: str | None = None
 
 
