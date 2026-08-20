@@ -117,7 +117,7 @@ newsbrief/
 
 ## 4. 직접 넣지 않은 것 — 배치 후 별도 처리 필요
 
-전부 **공용 영역**이라 기능 PR에 섞으면 반려 대상이다. 각각 별도 PR + 전원 리뷰로 진행한다.
+전부 **공용 영역**이다. 고치되 무엇을 왜 바꿨는지 팀에 알린다 (CLAUDE.md §5 충돌 방지 규칙 1).
 
 ### (1) `backend/app/main.py` — 라우터 등록
 
@@ -138,7 +138,7 @@ app.include_router(my_tag_router)
 passlib[bcrypt]
 email-validator
 ```
-(한 줄 추가도 자주 겹치므로 rebase 후 즉시 머지 — CLAUDE.md §5-7)
+(한 줄 추가도 자주 겹치므로 rebase 후 즉시 머지 — CLAUDE.md §5-6)
 
 ### (3) 공용 모듈 이름 확인 — 없으면 import 에러
 

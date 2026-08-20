@@ -66,7 +66,7 @@
 | 페이지네이션 | **커서 기반** (`nextCursor`, `hasNext`) | `schemas/feed.py`의 `FeedListResponse` + `feed_service.list_feed` |
 | 날짜 | ISO 8601 (UTC) | 스키마 타입 |
 | 성공 응답 | 데이터 객체 직접 반환(래핑 없음) | 래핑(`{ "data": ... }`)이 필요하면 스키마에서 처리 |
-| 에러 응답 | `app/common/exceptions`의 공용 핸들러에 위임 | **공용 영역 — 전원 리뷰 PR 필요** |
+| 에러 응답 | `app/common/exceptions`의 공용 핸들러에 위임 | 공용 영역 — 고치면 팀에 알린다 |
 | 세션 전달 | HttpOnly 쿠키 `nb_session` (+ `Authorization: Bearer` fallback) | `auth/api_paths.py`, `auth/dependencies.py` |
 | 204 사용 | 로그아웃·태그 삭제·북마크 | 라우터 `status_code` |
 
@@ -134,7 +134,7 @@ GET /api/v1/feed?limit=2
 
 ## 4. 구현하면서 전제한 것 (확인 필요)
 
-### 공용 모듈 (C 소유 아님 — 없으면 별도 PR 필요)
+### 공용 모듈 (C 소유 아님 — 고치면 팀에 알린다)
 
 | import 경로 | 용도 |
 |---|---|
@@ -157,11 +157,11 @@ GET /api/v1/feed?limit=2
 ### 의존성 추가 필요
 
 - `passlib[bcrypt]` (비밀번호 해시), `email-validator` (Pydantic `EmailStr`)
-- `requirements.txt`는 충돌이 잦은 공용 파일이므로 별도 PR로 추가 후 즉시 머지 (CLAUDE.md §5-7)
+- `requirements.txt`는 충돌이 잦은 공용 파일이므로 별도 PR로 추가 후 즉시 머지 (CLAUDE.md §5-6)
 
 ### 라우터 등록
 
-`backend/app/main.py`에 아래 라우터 등록이 필요하다. **공용 파일이므로 기능 PR에 섞지 말고 별도 PR + 전원 리뷰.**
+`backend/app/main.py`에 아래 라우터 등록이 필요하다. **공용 파일이므로 등록했으면 팀에 알린다.**
 
 ```python
 from app.modules.auth.routers.auth_router import router as auth_router

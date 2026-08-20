@@ -42,7 +42,7 @@
 | **비로그인 피드 접근** | 백엔드 확인 대기 | 두 경우 모두 동작하도록 만든다 (`design_plan.md` §7 표) |
 | **자유 키워드 입력** | 백엔드 확인 대기 | 설정 화면은 **선택형만** 먼저 구현 |
 | **요약 3종 저장 여부** | B·D 협의 미결 | 프론트는 `summaryType` 파라미터를 보내는 구조로 만들되, 3종이 항상 온다고 가정하지 않는다 |
-| **Bedrock → LangChain** | 루트 CLAUDE.md 본문에 아직 "Bedrock"으로 남아 있음 | 프론트 영향 없음. 단 관리자 화면 문구·라벨은 "LLM"으로 쓴다 |
+| **다중 프로바이더** | **확정됨** — 스키마 V2가 `model_id`를 `provider` + `model_name`으로 분리(루트 CLAUDE.md §8-10). 프로토타입이 이미 전제하던 구조다 | 관리자 화면 문구·라벨은 "LLM"으로 쓴다. 후속: `types/admin.ts`의 `provider: string`을 스키마 값 유니온으로 좁히고, `theme.ts`의 `colors.provider` 키를 스키마 값에 맞춘다(`claude` → `anthropic`, `gemini` → `google`). **키 이름 변경이지 디자인 값 변경이 아니다** |
 
 ---
 
@@ -60,8 +60,7 @@ frontend/src/types/common/    ← 공용
 
 **현실적 운영**: 프론트 담당이 D 한 명이므로 실제로 이 파일들을 쓰는 사람도 D다. 다만 이 영역을 수정할 때는
 
-- 커밋을 **별도 PR로 분리**한다 (기능 PR에 섞지 않는다)
-- PR 본문에 변경 이유와 영향 범위를 적는다
+- 변경 이유와 영향 범위를 팀에 알린다 (별도 PR로 분리할 필요는 없다)
 - `api/client.ts`, `types/common`은 백엔드(C)와 계약이 걸린 파일이므로 C에게 리뷰를 요청한다
 
 **Claude는 `frontend/` 밖의 파일을 수정하지 않는다.** `backend/`, `docs/db/`, `infra/`가 필요하면 사용자에게 알린다.

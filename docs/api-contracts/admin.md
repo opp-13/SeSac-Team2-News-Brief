@@ -128,7 +128,8 @@ GET /api/v1/admin/pipeline/runs?cursor=...&limit=20
 | `stages[].status` | `batch_jobs.status` | |
 | `stages[].targetCount` / `successCount` / `failCount` | 동명 컬럼 | |
 | `stages[].startedAt` / `finishedAt` | 동명 컬럼 | 소요시간은 프론트가 계산 |
-| `models` | `ai_invocations.model_id` DISTINCT (해당 job) | 아래 참고 |
+| `models` | `ai_invocations.model_name` DISTINCT (해당 job) | 아래 참고 |
+| `providers` | `ai_invocations.provider` DISTINCT (해당 job) | 스키마 V2에서 추가된 컬럼 |
 
 ### status 값의 대소문자 — 결정 필요
 
@@ -154,11 +155,12 @@ GET /api/v1/admin/pipeline/runs?cursor=...&limit=20
 ### `provider` / `model` 이 `batch_jobs`에 없다
 
 프로토타입 타입은 run마다 `provider: string`, `model: string`을 갖는다. 스키마에는
-`batch_jobs`에 모델 정보가 없고, `ai_invocations.model_id` / `summaries.model_id`에만 있다.
+`batch_jobs`에 모델 정보가 없고, `ai_invocations` / `summaries`에만 있다.
 
-→ 위 예시처럼 `models: string[]`(해당 run의 `ai_invocations.model_id` DISTINCT)로
-바꾸는 것을 제안한다. 한 배치에서 모델이 하나만 쓰인다는 보장이 없으므로 배열이 안전하다.
-`provider`는 아래 §2의 provider 문제와 같은 사안이다.
+→ 위 예시처럼 `models: string[]` / `providers: string[]`(해당 run의 `ai_invocations`
+DISTINCT)로 바꾸는 것을 제안한다. 한 배치에서 모델이 하나만 쓰인다는 보장이 없으므로
+배열이 안전하다. 스키마 V2가 `model_id`를 `provider` + `model_name`으로 분리했으므로
+서버가 접두사로 파생할 필요 없이 두 컬럼을 그대로 DISTINCT 하면 된다.
 
 ## GET /admin/pipeline/runs/{runId}/logs — 오류 상세
 
@@ -214,25 +216,26 @@ GET /api/v1/admin/pipeline/runs/20260818-2100/logs?level=ERROR
 
 화면: `/admin/llm-usage` — 요약 숫자 카드 4개 + 차트 3종
 
-## 🔴 `provider` 개념이 스키마와 기술 스택에 둘 다 없다
+## ✅ `provider` — 스키마 V2에서 해소됨
 
 프론트 차트는 **OpenAI / Claude / Gemini** 3개 프로바이더로 나눠 그린다
 (design_plan.md §2가 프로바이더별 구분색까지 지정: violet-700 / orange-700 / pink-700).
 
-그런데:
-1. 스키마 `ai_invocations`에는 `model_id VARCHAR(100)`만 있고 `provider` 컬럼이 없다.
-2. 루트 CLAUDE.md의 기술 스택은 **Amazon Bedrock 단일 프로바이더**다.
-   (frontend/CLAUDE.md §0.2에도 "Bedrock → LangChain" 표기 미정 항목이 남아 있다.)
+이전에는 스키마 `ai_invocations`에 `model_id VARCHAR(100)`만 있고 `provider` 컬럼이 없었으며,
+루트 CLAUDE.md의 기술 스택도 Amazon Bedrock 단일 프로바이더였다. 즉 프로토타입이 멀티
+프로바이더를 전제로 그려졌는데 확정 스택은 그렇지 않은 상태였다.
 
-즉 프로토타입이 멀티 프로바이더를 전제로 그려졌는데 확정 스택은 그렇지 않다.
-**B와 결정이 필요하다:**
+**스키마 V2가 멀티 프로바이더 쪽으로 확정했다** (루트 CLAUDE.md §8-10):
 
-- **(a) 실제로 멀티 프로바이더로 간다** → `ai_invocations`에 `provider` 컬럼 추가
-  (스키마 변경 → C 창구) 또는 `model_id` 접두사로 서버가 파생
-- **(b) Bedrock 단일로 간다** → 프로바이더 차트를 **모델별 차트로 바꿔야 한다**
-  (디자인 변경이므로 디자인 담당 승인 필요. 프론트가 임의로 바꾸지 않는다)
+- `ai_invocations` / `summaries` / `translations`의 `model_id`가 `provider` + `model_name`으로 분리됐다.
+- 따라서 차트는 `provider` 컬럼을 그대로 쓰면 되고, `model_id` 접두사로 파생할 필요가 없다.
+- 아래 응답 예시는 **프로바이더를 고정 키가 아닌 배열**로 둔다. 프로바이더가 늘거나 줄어도
+  계약이 깨지지 않게 하기 위함이며, 이 형태는 그대로 유지한다.
 
-아래 응답 예시는 어느 쪽이든 견딜 수 있게 **프로바이더를 고정 키가 아닌 배열**로 뒀다.
+**D 후속 작업**: `frontend/src/types/admin.ts`의 `provider: string`을 스키마 값에 맞춘 유니온으로
+좁히고, `theme.ts`의 `colors.provider` 키(`claude` → `anthropic`, `gemini` → `google`)를
+스키마 `provider` 값과 맞춘다. **디자인 값 변경이 아니라 키 이름 변경이다.**
+현재 목업은 표시용 라벨(`'Claude'` / `'OpenAI'` / `'Gemini'`)을 쓰고 있어 라벨 매핑이 필요하다.
 
 ## GET /admin/llm-usage — 사용량 집계
 
@@ -286,7 +289,7 @@ GET /api/v1/admin/llm-usage?from=2026-08-13&to=2026-08-19
 | `summary.failureRate` | `status='FAILED'` 비율 (0~1 실수) |
 | `daily[].totalTokens` | 일자별 토큰 합 |
 | `daily[].costByProvider[]` | 일자·프로바이더별 `SUM(cost_usd)` |
-| `byModel[]` | `model_id`별 `COUNT(*)` |
+| `byModel[]` | `(provider, model_name)`별 `COUNT(*)` |
 
 ### ⚠️ 서버는 포맷된 문자열을 보내지 않는다
 
@@ -305,17 +308,25 @@ UsageSummaryCard { label: '총 호출 수', value: '18,294', unit: '건', estima
 같은 이유로 `ModelUsage.pct`(백분율)도 서버가 계산하지 않는다 — `calls`만 주면
 프론트가 비율을 낸다.
 
-### ⚠️ "추정" 라벨 — 근거 데이터가 없다
+### ✅ "추정" 라벨 — 스키마 V2에서 해소됨
 
 design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어 일부 값은 추정치입니다.
 **'추정' 라벨을 표시할 자리를 반드시 만드세요.**" 프론트는 이미 배지를 그리고 있다.
 
-그런데 스키마에는 어떤 값이 추정치인지 나타내는 컬럼이 없다
-(`ai_invocations.input_tokens` / `output_tokens`는 그냥 숫자).
+이전에는 스키마에 어떤 값이 추정치인지 나타내는 컬럼이 없어 "특정 모델은 항상 추정"이라는
+규칙을 서버가 따로 들고 있어야 했다.
 
-→ 위 응답의 `summary.estimated` 처럼 **어떤 지표가 추정치인지 서버가 알려주는** 형태를
-제안한다. 이를 위해 `ai_invocations`에 `is_token_estimated` 같은 플래그가 필요할 수 있다
-(**스키마 변경 → C 창구**). 아니면 "특정 model_id는 항상 추정"이라는 규칙을 서버가 갖는다.
+**스키마 V2가 `ai_invocations.is_token_estimated BOOLEAN`을 추가했다.** 프로바이더가 토큰 수를
+주지 않아 추정한 호출은 이 플래그가 `TRUE`다. 서버는 위 응답의 `summary.estimated`를 이
+플래그의 집계로 채운다 — 해당 기간에 추정 호출이 하나라도 섞였으면 그 지표를 추정으로 표시한다.
+
+같이 추가된 컬럼:
+
+- `ai_invocations.is_fallback` — 기본 모델 실패로 대체 모델이 처리한 호출
+- `ai_invocations.status`에 `TIMEOUT` / `RATE_LIMITED` 추가 — 실패 원인을 `FAILED` 하나로 뭉개지 않는다
+
+**D 결정 필요**: `is_fallback`과 세분화된 실패 상태를 화면에 노출할지. 노출한다면 이 문서에
+응답 필드를 먼저 추가한다.
 
 ### 비용 임계치 알림은 이 화면 범위 밖
 
@@ -340,7 +351,7 @@ design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어
     {
       "targetEntity": "ARTICLES",
       "retentionDays": 90,
-      "strategy": "PARTITION_DROP",
+      "strategy": "BATCH_DELETE",
       "isActive": true,
       "recordCount": 128402,
       "lastExecutedAt": "2026-08-18T18:00:00Z"
@@ -363,29 +374,53 @@ design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어
 |---|---|---|
 | `targetEntity` | `target_entity` | ENUM, `uk_retention_target`로 유일 → 이게 곧 식별자 |
 | `retentionDays` | `retention_days` | |
-| `strategy` | `strategy` | `PARTITION_DROP` \| `BATCH_DELETE`. 프론트는 현재 미표시 |
+| `strategy` | `strategy` | `BATCH_DELETE` 단일값 (V2에서 `PARTITION_DROP` 제거). 프론트는 현재 미표시 |
 | `isActive` | `is_active` | 프론트의 "자동 삭제 켜짐/꺼짐" |
 | `recordCount` | 대상 테이블 건수 | **스키마에 없는 파생값** — 아래 참고 |
 | `lastExecutedAt` | `last_executed_at` | NULL 가능 (한 번도 안 돌았을 때). 프론트는 `—` 표시 |
 
-### ⚠️ 프론트 목업의 대상 목록이 스키마 ENUM과 다르다
+### ✅ 프론트 목업의 대상 목록 — 스키마 V2에서 해소됨
 
 | 프론트 목업 (`mocks/retentionMockData.ts`) | 스키마 `target_entity` ENUM |
 |---|---|
 | `articles` | `ARTICLES` ✓ |
 | `summaries` | `SUMMARIES` ✓ |
 | `logs` | `LOGS` ✓ |
-| `llm_calls` (LLM 호출 이력) | **ENUM에 없음** ✗ |
+| `llm_calls` (LLM 호출 이력) | `INVOCATIONS` ✓ (V2에서 추가) |
 | — | `TRANSLATIONS` (목업에 없음) |
 | — | `FEED_ITEMS` (목업에 없음) |
 
-`ai_invocations`(LLM 호출 이력)를 보관 정책 대상으로 관리하려면 **ENUM에 값을 추가해야
-한다(스키마 변경 → C 창구).** 프론트는 서버가 주는 목록을 그대로 그리도록 만들면 되므로,
-목업의 4개 항목은 계약 확정 시 서버 응답에 맞춰 교체한다(D).
+**스키마 V2가 `target_entity`에 `INVOCATIONS`를 추가했다.** 프론트는 서버가 주는 목록을
+그대로 그리도록 만들면 되므로, 목업의 4개 항목은 서버 응답에 맞춰 교체한다(D).
+목업에 없던 `TRANSLATIONS` / `FEED_ITEMS`까지 오므로 RetentionPage의 항목 수가 늘어난다.
+
+### ✅ `ARTICLES` 정책은 hard delete다
+
+스키마 V2는 `articles` → `summaries` / `feed_items` FK를 `ON DELETE RESTRICT`로 걸었다.
+요약이 남아 있는 기사는 삭제 자체가 실패한다 — 원문은 재수집할 수 있지만 요약은 LLM을 다시
+호출해야 만들어지므로, 보관 배치가 원문을 지우면서 비용을 태워 만든 결과를 연쇄 삭제하는
+것을 막기 위한 의도적 제약이다 (루트 CLAUDE.md §8-11).
+
+**`ARTICLES` 정책은 hard delete로 확정했다** (§8-14). "요약을 버린다"는 판단을 명시적으로
+먼저 내린 뒤 원문을 지운다. 따라서 화면의 "삭제"는 말 그대로 행 삭제이고, `recordCount`도
+그대로 "지워질 행 수"를 뜻한다 — 문구를 바꿀 필요는 없다.
+
+**다만 사용자에게 보이지 않는 연쇄가 있다.** `ARTICLES` 정책 1회 실행으로 다음이 함께 사라진다.
+
+| 지워지는 것 | 경로 |
+|---|---|
+| `summaries` | 배치가 직접 삭제 (원문 삭제의 선행 조건) |
+| `translations` | `summaries` 삭제에 FK CASCADE |
+| `feed_items` | `summaries` 삭제에 FK CASCADE |
+| `article_tags` | `articles` 삭제에 FK CASCADE |
+
+즉 **`ARTICLES` 보관 기간을 줄이면 요약·번역도 같이 날아간다.** 아래 "보관 기간 축소는
+파괴적 동작이다" 절의 확인 절차가 `ARTICLES`에서는 특히 중요하다. 서버는 축소 요청 시
+삭제 예정 건수를 원문/요약 각각으로 응답할 수 있다(배치가 `dry_run`으로 이미 세고 있다).
 
 ### ⚠️ `recordCount` — 성능 주의
 
-`articles`는 월 단위 파티셔닝된 대량 테이블이다. 매 조회마다 `COUNT(*)`를 돌리면
+`articles`는 대량 테이블이다(V2에서 파티셔닝은 제거했다). 매 조회마다 `COUNT(*)`를 돌리면
 관리자 화면 하나가 DB를 부담스럽게 만든다. 대안:
 
 1. `information_schema.TABLES.TABLE_ROWS` 근사치 사용 (빠르지만 부정확)
@@ -435,8 +470,9 @@ PATCH /api/v1/admin/retention/ARTICLES
 
 ### ⚠️ 보관 기간 축소는 파괴적 동작이다
 
-`retentionDays`를 줄이면 다음 보관 배치에서 **데이터가 삭제된다.** 특히
-`strategy = 'PARTITION_DROP'`은 파티션 단위로 즉시 날아간다.
+`retentionDays`를 줄이면 다음 보관 배치에서 **데이터가 삭제된다.** V2에서 `PARTITION_DROP`이
+빠져 전부 `BATCH_DELETE`이므로 파티션 단위로 즉시 날아가는 경로는 없어졌지만, 되돌릴 수 없는
+삭제라는 점은 그대로다.
 
 프론트 화면에는 현재 확인 절차가 없다(수정 → 저장 즉시 반영). 아래를 제안한다.
 
@@ -456,9 +492,11 @@ PATCH /api/v1/admin/retention/ARTICLES
 | 3 | status 값 대소문자 — 스키마 ENUM 그대로 쓸지 | A · D |
 | 4 | run 단위 status 집계 규칙 | A |
 | 5 | `processedCount` 집계 방식 (단계별 success_count를 어떻게 하나로 합칠지) | A |
-| 6 | 멀티 프로바이더로 갈지, Bedrock 단일로 갈지 (차트 구조가 걸림) | B · 디자인 |
-| 7 | "추정" 플래그 근거 — 컬럼 추가 vs 서버 규칙 | B (+C if 스키마) |
-| 8 | `ai_invocations`를 보관 정책 대상 ENUM에 추가할지 | C |
+| ~~6~~ | ~~멀티 프로바이더로 갈지, Bedrock 단일로 갈지~~ → **해소.** 스키마 V2가 멀티 프로바이더로 확정 (`provider` + `model_name`) | ~~B · 디자인~~ |
+| ~~7~~ | ~~"추정" 플래그 근거 — 컬럼 추가 vs 서버 규칙~~ → **해소.** `ai_invocations.is_token_estimated` 추가 | ~~B (+C if 스키마)~~ |
+| ~~8~~ | ~~`ai_invocations`를 보관 정책 대상 ENUM에 추가할지~~ → **해소.** `target_entity`에 `INVOCATIONS` 추가 | ~~C~~ |
 | 9 | `recordCount` 산출 방식 (근사치 / 저장 / 제거) | C |
 | 10 | 보관 기간 축소 시 확인 절차 | C · 디자인 |
 | 11 | 집계 기간의 시간대 기준 (KST vs UTC) — 일별 차트 경계가 달라진다 | A · B |
+| ~~12~~ | ~~`ARTICLES` 보관 정책이 soft purge인지 hard delete인지~~ → **해소.** hard delete로 확정 (CLAUDE.md §8-14). 다만 요약·번역이 함께 삭제되므로 축소 확인 절차(10번)와 묶어서 봐야 한다 | ~~C · 디자인~~ |
+| 13 | `is_fallback` / `TIMEOUT` · `RATE_LIMITED` 를 화면에 노출할지 | D |
