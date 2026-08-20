@@ -6,9 +6,18 @@
 # 필터에 추가하는 작업은 공용 파일 변경이라 별도 PR + 전원 리뷰가 필요하다.
 
 [tool.ruff]
-# 120으로 두면 `ruff format --check`와 E501이 현재 코드에서 모두 깨끗하다.
-# 100으로 내리면 긴 한국어 주석 10곳이 E501에 걸린다(포매터는 주석을 쪼개지 못한다).
-# 첫날부터 전부 실패하는 린트 설정은 결국 무시되므로, 현 코드가 통과하는 선에서 시작한다.
+# 120을 고른 이유: 기존 auth/feed 모듈이 아직 `ruff format`을 거치지 않은 상태여서
+# 어느 폭을 잡아도 재포맷 대상이 남는데, 그 수가 가장 적다(88→23개, 100→13개, 120→11개).
+# 100으로 내리면 긴 한국어 주석 10곳이 E501에도 걸린다(포매터는 주석을 쪼개지 못한다).
+#
+# 현재 상태:
+#   `ruff check`  — app/modules/auth/dependencies.py 의 import 정렬 1건만 남음(자동 수정 가능)
+#   `ruff format` — auth/feed 모듈 11개 파일이 재포맷 대상
+# 이 파일들은 C 소유라 스타일 목적으로 건드리지 않았다. 진행 중 작업과 충돌하고
+# 리뷰 diff만 커진다. 담당자가 `ruff format .` 을 한 번 돌리면 정리된다.
+#
+# 그래서 .github/workflows/lint.yml 의 필터에 backend/** 를 추가하는 건 위 정리가
+# 끝난 뒤에 해야 한다 (공용 파일 변경 → 별도 PR + 전원 리뷰).
 line-length = 120
 target-version = "py311"
 extend-exclude = ["app/db/migrations", ".venv"]
