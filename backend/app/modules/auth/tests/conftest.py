@@ -1,28 +1,28 @@
 """auth 모듈 테스트 픽스처.
 
-DB는 SQLite in-memory, Redis는 최소 페이크로 대체해 외부 의존 없이 돌린다.
+DB는 기본이 SQLite in-memory고 `TEST_DATABASE_URL`을 주면 로컬 MySQL로 돌아간다
+(`app/db/testing.py`). Redis는 최소 페이크로 대체해 외부 의존 없이 돌린다.
 (통합 이후 각 담당이 자기 모듈을 테스트한다 — CLAUDE.md §3)
 """
 
 import time
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
 
-from app.db.base import Base
+from app.db.testing import make_engine, new_session, prepare_schema
 from app.modules.auth.models.user import User  # noqa: F401  (테이블 등록용)
 
 
 @pytest.fixture()
 def db():
-    engine = create_engine("sqlite+pysqlite:///:memory:")
-    Base.metadata.create_all(engine)
-    session = sessionmaker(bind=engine)()
+    engine = make_engine()
+    prepare_schema(engine)
+    session = new_session(engine)
     try:
         yield session
     finally:
         session.close()
+        engine.dispose()
 
 
 class FakeRedis:
