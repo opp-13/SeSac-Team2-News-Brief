@@ -20,6 +20,14 @@ NCP_CLIENT_SECRET=...
 FREENEWS_API_KEY=...
 ```
 
+Deploy 환경의 경우 아래 의존성 추가 필요
+
+```bash
+# GPU인스턴스가 아닐 경우 CPU 전용 torch를 우선 깔 것 (disk 용량 절약)
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e ".[deploy]"   # sentence-transformers, scikit-learn, pymysql
+```
+
 ## CLI 사용법
 
 ```bash

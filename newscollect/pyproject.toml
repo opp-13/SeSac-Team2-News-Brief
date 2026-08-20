@@ -19,6 +19,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = ["ruff"]
 
+deploy = ["sentence-transformers", "scikit-learn", "pymysql"]
+
 [project.urls]
 "Homepage" = "https://github.com/opp-13/SeSac-Team2-News-Brief"
 

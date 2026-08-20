@@ -25,16 +25,24 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--display", type=int, default=10, help="provider별 검색 결과 개수 (기본값 10)"
     )
+    parser.add_argument(
+        "--language",
+        choices=["ko", "en"],
+        default="en",
+        help="freenews 검색 언어 (기본값 en). naver는 언어 개념이 없어 무시됨",
+    )
     parser.add_argument("--with-body", action="store_true", help="본문(body)도 함께 가져옵니다")
     return parser.parse_args()
 
 
-def search_stage(category: str, display: int, providers: list) -> list:
+def search_stage(category: str, display: int, providers: list, language: str = "en") -> list:
     """Run the given providers and return one combined, unsorted list of items."""
     items = []
     for name in providers:
         try:
-            items.extend(get_provider(name).search_by_category(category, display=display))
+            items.extend(
+                get_provider(name).search_by_category(category, display=display, language=language)
+            )
         except Exception as e:
             print(f"[{name}] 검색 오류: {e}", file=sys.stderr)
     return items
@@ -71,9 +79,14 @@ def main() -> int:
     args = parse_args()
     providers = PROVIDER_NAMES if args.provider == "all" else [args.provider]
 
-    items = search_stage(args.category, args.display, providers)
+    items = search_stage(args.category, args.display, providers, language=args.language)
 
-    ## TODO: 유사도 기반 중복 기사 제거 모듈을 여기(search_stage -> detail_stage 사이)에 추가.
+    ## TODO:  db mock 제거
+
+    # --help와 같은 동작에서는 필요 x
+    from dedup import dedup_stage
+
+    items = dedup_stage(items, tag=args.category)
 
     if args.with_body:
         items = detail_stage(items)
