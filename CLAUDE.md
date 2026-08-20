@@ -12,7 +12,7 @@
 - 수집: 외부 News API에서 기사(제목/본문/URL/발행일)를 하루 3회(07:00 / 12:00 / 17:00) 배치 수집, URL 기준 중복 제거
 - 요약/번역: LLM으로 기사 요약(한 줄/3줄/상세) 후 사용자 지정 언어로 번역
 - 배포: 사용자 관심 태그에 매칭되는 기사만 선별해 개인화 피드로 제공
-- 운영: 파이프라인 처리 현황·오류 확인, LLM 호출량/비용 추적 및 임계치 알림, 데이터 보관 정책
+- 운영: 파이프라인 처리 현황·오류 확인, 데이터 보관 정책 (LLM 호출량/비용 추적은 §8-17로 스코프 제외)
 
 **설계의 핵심 제약 — 조회 시점에 LLM을 호출하지 않는다.**
 요약·번역은 배치에서만 생성해 MySQL에 영구 저장하고, 사용자 요청은 저장된 결과 조회로만 응답한다. 이 원칙을 깨는 구현(요청 시 실시간 요약, 캐시 미스 시 온디맨드 호출 등)은 성능이 아니라 **비용 사고**로 취급한다.
@@ -110,7 +110,7 @@ Alembic이 올린 스키마에 그대로 붙으므로** 이 부류를 잡는다.
 | 담당 | 모듈 코드 | 담당 기능 | 소유 디렉토리 |
 |---|---|---|---|
 | **A** | `collector` | 뉴스 API 연동, 수집 스케줄 대상 정의, 키워드/카테고리/언론사 필터링, 중복 기사 제거, 수집 오류·재시도, 파이프라인 처리 현황 집계 API |  `newscollect/*` |
-| **B** | `ai` | LLM 요약 생성(한 줄/3줄/상세), 다국어 번역, 요약 검수 플래그, 요약/번역 결과 영구 저장, 프로바이더별 호출량·비용 기록 및 임계치 알림 | `backend/app/modules/ai/*`, `backend/app/batch/{summarize,translate}.py` |
+| **B** | `ai` | LLM 요약 생성(한 줄/3줄/상세), 다국어 번역, 요약 검수 플래그, 요약/번역 결과 영구 저장 | `backend/app/modules/ai/*`, `backend/app/batch/{summarize,translate}.py` |
 | **C** | `feed` (Backend) | 회원가입/로그인(Redis 세션), 관심 태그 등록·관리, 콘텐츠 큐레이션 배치, 뉴스 피드 조회 API, 원문 링크 제공, 데이터 보관 정책 배치 | `backend/app/modules/{auth,feed}/*`, `backend/app/batch/{curate,retention}.py`, `backend/app/db/migrations` |
 | **D** | `web` (Frontend) | React 앱 전체 — 로그인/회원가입, 마이페이지, 관심 태그 설정, 피드 목록/상세, 북마크, 관리자 모니터링·비용 대시보드 | `frontend/src/**` (아래 공용 영역 제외) |
 | 공용 | `_shared` | 소유자를 두지 않는다. 누구나 고치되 팀에 알린다 (§5 충돌 방지 규칙 1). 공용 컴포넌트/라우팅/디자인 토큰, DB 세션, 공통 예외/로깅, 배치 엔트리포인트, Terraform | `backend/app/{core,db,common}`, `backend/app/main.py`, `frontend/src/{routes,constants}`, `frontend/src/components/common`, `frontend/src/api/client.ts`, `frontend/src/types/common`, `infra/`, `.github/workflows/` |
@@ -254,9 +254,10 @@ A → B → C → D는 데이터 의존이지만 **그대로 기다리면 4명�
 
 9. **`articles` 파티셔닝을 제거하고 FK를 살린다.** 기존 "파티셔닝 vs FK" 미결 사항을 FK 쪽으로 확정했다. 일 수천 건 규모에서는 보관 정책을 `BATCH_DELETE`로 처리해도 충분하고, 참조 무결성을 DB가 보장하는 편이 애플리케이션 부담이 적다. PK가 `(id, published_at)` 복합에서 `id` 단일로 돌아왔고, `article_id` FK 7개가 복구됐다. 3번의 중복 제거 정상화가 부수 효과로 따라온다. (C 담당)
 10. **단일 프로바이더(Bedrock) 전제를 버리고 다중 프로바이더로 간다.** `summaries.model_id` / `translations.model_id` / `ai_invocations.model_id`를 `provider` + `model_name` 두 컬럼으로 분리했다. `ai_invocations`에 `is_token_estimated`(프로바이더가 토큰 수를 주지 않아 추정한 경우), `is_fallback`(기본 모델 실패로 대체 모델이 처리한 경우)을 추가하고 `status`에 `TIMEOUT` / `RATE_LIMITED`를 넣어 실패 원인을 구분한다. **스키마에도 코드에도 특정 클라이언트 라이브러리명을 박지 않는다** — 2번(실행기 비결합)과 같은 기준이다. (B 담당)
+    - ~~`ai_invocations` 관련 부분은 17번으로 대체됐다~~ — 비용 추적을 스코프에서 빼면서 그 테이블을 제거했다. `summaries`/`translations`의 `provider`+`model_name` 분리는 그대로 유효하다.
 11. **원문 삭제가 LLM 결과를 연쇄 삭제하지 못하게 막는다.** `articles` → `summaries` / `feed_items` FK를 `ON DELETE RESTRICT`로 걸었다. 요약이 남아 있는 기사는 삭제 자체가 실패한다. 원문은 URL로 재수집할 수 있지만 요약은 LLM을 다시 호출해야 만들어지므로, 이건 성능이 아니라 **비용 사고** 방지다. `ARTICLES` 보관 정책 구현 방식은 아래 미결 사항 참고. (C 담당)
 12. **보조 인덱스는 스키마 본문에서 분리한다.** `schema.sql`에는 업무 규칙에 해당하는 제약(PK / FK / UNIQUE)만 남기고, 조회 성능용 `KEY`와 `FULLTEXT`는 파일 하단 주석에 추가 후보로 정리했다. 실제 쿼리를 `EXPLAIN`으로 확인한 뒤 `ALTER`로 붙인다. FK 컬럼에는 InnoDB가 인덱스를 자동 생성하므로 중복 생성하지 않는다.
-13. **`retention_policies` 조정.** `strategy`에서 `PARTITION_DROP`을 제거했다(파티셔닝을 뺐으므로 실행 불가능한 값이고, 남겨 두면 관리자 화면에 고를 수 없는 선택지가 뜬다). `target_entity`에는 `INVOCATIONS`를 추가해 `ai_invocations` 보관 정책을 표현할 수 있게 했다. (C 담당)
+13. **`retention_policies` 조정.** `strategy`에서 `PARTITION_DROP`을 제거했다(파티셔닝을 뺐으므로 실행 불가능한 값이고, 남겨 두면 관리자 화면에 고를 수 없는 선택지가 뜬다). ~~`target_entity`에 `INVOCATIONS` 추가~~ → 17번에서 다시 제거했다(가리킬 테이블이 없어졌다). (C 담당)
 14. **`ARTICLES` 보관 정책은 hard delete다.** 11번의 `RESTRICT` 때문에 원문을 지우려면 요약을 먼저 버려야 한다. soft purge(본문만 NULL) 대신 **"요약을 버린다"는 판단을 명시적으로 먼저 내리는** 쪽을 택했다. 순서는 `DELETE summaries`(→ `translations` / `feed_items` CASCADE) → `DELETE articles`(→ `article_tags` CASCADE) 고정이며, 순서를 어기면 RESTRICT에 걸려 실패한다. 되돌릴 수 없으므로 `dry_run`으로 대상 건수를 먼저 확인할 수 있게 했고 요약/원문 건수를 `job_logs`에 남긴다. 구현은 `modules/feed/services/retention_service.py`. (C 담당)
 15. **초기 마이그레이션을 V2 기준으로 한 리비전에 담았다.** `backend/app/db/migrations/versions/0001_v2_initial_schema.py`가 17개 테이블을 모두 생성한다. 모델이 스키마 전체를 덮지 않으므로(A·B 테이블 6개는 모델 없음) **autogenerate가 아니라 `schema.sql`을 기준으로 손으로 작성했다.** `env.py`의 `include_object`가 메타데이터에 없는 테이블을 비교 대상에서 제외해, 이후 autogenerate가 A·B 테이블에 DROP을 제안하는 사고를 막는다. (C 담당)
 
@@ -266,15 +267,24 @@ A → B → C → D는 데이터 의존이지만 **그대로 기다리면 4명�
     - `is_active`: **화면 노출 여부만** 뜻한다. `GET /tags`는 활성만 내려주지만 수집기는 비활성 태그로도 태깅한다 — 데이터는 쌓되 필터 칩에 63개를 늘어놓지 않기 위함이다. 현재 12개 활성.
     - 태그를 추가·변경하려면 `0002_seed_tags`를 고치는 게 아니라 **새 리비전**을 낸다 (§5 규칙 5).
 
+17. **LLM 호출량·비용 추적을 스코프에서 제외한다.** 프로바이더를 **Groq 하나**로 고정하면서 프로바이더별 비용 비교의 실익이 사라졌다. 화면만 지우고 스키마를 남기면 아무도 쓰지 않는 테이블이 남으므로 함께 정리했다.
+    - 제거: `ai_invocations` / `cost_budgets` / `cost_alerts` 테이블, `retention_policies.target_entity`의 `INVOCATIONS`, 관리자 "LLM 비용·사용량" 화면 (리비전 `0003_drop_cost`)
+    - 실제로 이 테이블들은 한 번도 쓰인 적이 없다 — 수집 파이프라인이 Groq를 호출하면서 `ai_invocations`에 한 행도 남기지 않았고, 나머지 둘은 읽는 코드조차 없었다.
+    - **남긴 것**: `summaries` / `translations`의 `provider`·`model_name`. 비용이 아니라 "어떤 모델이 만든 결과인가"를 기록하는 값이라 품질 추적에 계속 쓰인다.
+    - 되살리려면 `0003_drop_cost`의 downgrade가 동일한 정의로 테이블을 복구한다.
+18. **보관 정책은 `retention_policies` 테이블이 소유하고 관리자 화면에서 바꾼다.** 이전에는 배치가 코드 상수를 써서 화면에서 기간을 바꿔도 반영되지 않았다(테이블은 있는데 읽는 코드가 없었다).
+    - `GET /admin/retention`, `PATCH /admin/retention/{targetEntity}` 구현 (C). 관리자 권한 필수 — 401(미로그인)과 403(권한 없음)을 구분한다.
+    - 배치가 인자 없이 실행되면 테이블 값을 읽고, `is_active`가 꺼진 대상은 건너뛴다. 실행 후 `last_executed_at`을 기록한다.
+    - 기본 정책은 리비전 `0004_seed_retention`이 넣는다. 표시용 이름·설명은 서버가 보내지 않고 프런트가 갖는다(`api/admin.ts`) — 문구를 고칠 때마다 백엔드를 배포하지 않기 위함이다.
+
 ### 남은 미결 사항
 - **배치 실행 기술 선정** — 스케줄러/큐를 무엇으로 할지 미정. 하루 3회 고정 배치라는 요구사항만 확정. 선정 전까지 §2 규칙(실행기 비의존)을 지킨다. (전원 합의 사항)
 - **요약 3종 저장 여부** — 현재 스키마는 한 줄/3줄/상세를 별도 row로 두지만, 배치에서 세 종류를 다 만들면 LLM 호출이 3배가 된다. "상세 1건만 저장 + 짧은 버전은 프런트에서 절단" 안과 비교 검토 필요. (B·D 협의, 비용 추정 후 결정)
-- **`cost_budgets`의 기간별 유니크** — V2는 `UNIQUE (period_type)`을 뒀다. `DAILY`/`MONTHLY` 각 1행만 허용되므로 프로바이더별 예산을 만들 수 없는데, §8-10으로 프로바이더가 여럿이 된 이상 "OpenAI 일일 한도"와 "Anthropic 일일 한도"를 따로 두고 싶어질 수 있다. 필요해지면 `provider` 컬럼 추가 + `UNIQUE (period_type, provider)`로 넓히되, MySQL 유니크는 `NULL` 중복을 허용하므로 "전체 예산"의 유일성은 따로 보장해야 한다. 초기에는 전체 한도 하나로 충분하다고 보고 현행 유지. (B 담당)
 - **인덱스 추가 시점** — §8-12로 보조 인덱스가 전부 빠졌다. 성능 손실이 가장 큰 것은 `idx_feed_list`다. 피드 목록은 앱에서 가장 빈번한 쿼리이고 `uk_feed(user_id, article_id)`로 `user_id` 필터는 타지만 정렬은 filesort가 된다. 일 수천 건 규모에서는 문제없으나, 데이터가 늘면 `schema.sql` 하단 후보 중 이것부터 붙인다. (C 담당)
 - **토큰 제한 초과 기사 처리** — 청크 분할을 하지 않기로 했으므로 대안을 정해야 한다. (a) `articles.status='FAILED'` + `job_logs.error_code='TOKEN_LIMIT_EXCEEDED'`로 스킵, (b) 본문 앞부분만 잘라 요약하고 `summaries.is_truncated` 플래그 추가. (b)를 택하면 스키마 변경이 필요하다. (B 담당)
 - **번역 지원 언어 목록** — `users.preferred_language`와 `translations.target_language`의 허용 값 확정 필요. 지원 언어가 늘어날수록 호출 비용이 선형 증가하므로 초기에는 최소 집합으로 시작. (B·C 협의)
 - **기본 프로바이더·모델 선정** — 프로바이더와 모델 ID를 환경변수로 주입하고 `summaries.provider` / `summaries.model_name`에 실제 사용값을 기록한다는 원칙만 확정(§8-10). 어떤 프로바이더·모델을 기본값으로 쓸지, 폴백 순서를 어떻게 둘지는 미결. (B 담당)
-- **비용/실패 알림 채널** — `cost_budgets.notify_channel`의 실제 전송 수단과 배치 실패 알림 경로 미정. (B 담당)
+- **배치 실패 알림 경로** — 배치가 실패했을 때 어떻게 알릴지 미정. (전원 합의)
 - **Terraform·CI/CD 담당과 착수 시점** — 미정. (전원 합의 사항)
 
 ## 9. Claude에게 주는 전역 지시사항
@@ -286,6 +296,6 @@ A → B → C → D는 데이터 의존이지만 **그대로 기다리면 4명�
 - **스키마 변경이 필요한 작업**이면 코드를 먼저 쓰지 않고, 변경 내용을 정리해 사용자에게 알린 뒤 C 창구를 통하도록 안내한다. Alembic revision을 임의 생성하지 않는다.
 - 새 API를 만들 때는 먼저 `docs/api-contracts/{module}.md`에 계약이 있는지 확인하고, 없으면 만들어 사용자 확인을 받은 뒤 구현한다. 프론트 작업 시 계약에 없는 응답 필드를 가정하지 않는다.
 - API 키·DB 접속정보 등 시크릿을 코드나 커밋에 포함하지 않는다. 예시가 필요하면 `.env.example`에 플레이스홀더로만 쓴다.
-- 배치를 구현할 때는 실행 이력(`batch_jobs`)과 오류(`job_logs`) 기록, LLM 호출 시 `ai_invocations` 기록을 항상 함께 남긴다.
+- 배치를 구현할 때는 실행 이력(`batch_jobs`)과 오류(`job_logs`) 기록을 항상 함께 남긴다.
 - 모듈 코드를 작성하면 같은 모듈 `tests/`에 최소 테스트를 함께 추가한다 (§3 테스트).
 - 커밋 메시지는 §5 컨벤션을 따른다.

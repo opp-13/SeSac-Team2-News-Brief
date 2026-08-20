@@ -6,12 +6,12 @@
 >
 > | 섹션 | 제공 담당 |
 > |---|---|
-> | `/admin/pipeline/*` | **A** (collector — 파이프라인 처리 현황 집계) |
-> | `/admin/llm-usage` | **B** (ai — 호출량·비용 기록) |
-> | `/admin/retention` | **C** (feed — 데이터 보관 정책 배치) |
+> | `/admin/pipeline/*` | **A** (collector — 파이프라인 처리 현황 집계) — 미구현, 프론트는 목업 |
+> | ~~`/admin/llm-usage`~~ | 스코프 제외 (§8-17). 화면·테이블 모두 제거됨 |
+> | `/admin/retention` | **C** (feed) — ✅ 구현 완료, 프론트 연결됨 |
 >
-> 프론트(D)는 관리자 화면 3개를 모두 구현해 뒀으나 **아직 api 레이어를 경유하지 않는다**
-> (`usePipelineRuns` / `useLLMUsage` / `useRetentionPolicies`가 목업 배열을 직접 사용).
+> 관리자 화면은 이제 2개다(파이프라인 / 보관 정책). 보관 정책은 실제 API를 쓰고,
+> 파이프라인만 아직 `usePipelineRuns`가 목업 배열을 직접 쓴다.
 >
 > 관련 문서: [auth.md](auth.md), [feed.md](feed.md), [meta.md](meta.md)
 
@@ -21,7 +21,7 @@
 - 응답 봉투: `{ "success": true, "data": ... }` | `{ "success": false, "error": { "code", "message" } }`
 - 시각은 **ISO 8601 UTC**. 상대시간·숫자 포맷은 프론트 책임 (§ 아래 참고)
 - **모든 엔드포인트는 `users.role = 'ADMIN'` 을 요구한다.**
-  비관리자 → `403` + `code: "FORBIDDEN"`, 비로그인 → `401` + `code: "UNAUTHENTICATED"`.
+  비관리자 → `403` + `code: "ADMIN_REQUIRED"`, 비로그인 → `401` + `code: "NO_SESSION"`.
   프론트도 `routes/AdminRoute.tsx`에서 `useAuth().isAdmin`으로 한 번 막지만,
   **화면 가드는 보안 경계가 아니므로 서버에서 반드시 다시 검사할 것.**
 
@@ -212,135 +212,20 @@ GET /api/v1/admin/pipeline/runs/20260818-2100/logs?level=ERROR
 
 ---
 
-# 2. LLM 비용·사용량 (담당: B)
+## ~~LLM 비용·사용량~~ — 스코프에서 제외됨
 
-화면: `/admin/llm-usage` — 요약 숫자 카드 4개 + 차트 3종
+**이 화면은 삭제됐다** (루트 CLAUDE.md §8-17). 프로바이더를 Groq 하나로 고정하면서
+프로바이더별 비용 비교의 실익이 사라졌고, 화면만 지우고 스키마를 남기면 아무도 쓰지 않는
+테이블이 남으므로 `ai_invocations` / `cost_budgets` / `cost_alerts`도 함께 제거했다
+(리비전 `0003_drop_cost`).
 
-## ✅ `provider` — 스키마 V2에서 해소됨
-
-프론트 차트는 **OpenAI / Claude / Gemini** 3개 프로바이더로 나눠 그린다
-(design_plan.md §2가 프로바이더별 구분색까지 지정: violet-700 / orange-700 / pink-700).
-
-이전에는 스키마 `ai_invocations`에 `model_id VARCHAR(100)`만 있고 `provider` 컬럼이 없었으며,
-루트 CLAUDE.md의 기술 스택도 Amazon Bedrock 단일 프로바이더였다. 즉 프로토타입이 멀티
-프로바이더를 전제로 그려졌는데 확정 스택은 그렇지 않은 상태였다.
-
-**스키마 V2가 멀티 프로바이더 쪽으로 확정했다** (루트 CLAUDE.md §8-10):
-
-- `ai_invocations` / `summaries` / `translations`의 `model_id`가 `provider` + `model_name`으로 분리됐다.
-- 따라서 차트는 `provider` 컬럼을 그대로 쓰면 되고, `model_id` 접두사로 파생할 필요가 없다.
-- 아래 응답 예시는 **프로바이더를 고정 키가 아닌 배열**로 둔다. 프로바이더가 늘거나 줄어도
-  계약이 깨지지 않게 하기 위함이며, 이 형태는 그대로 유지한다.
-
-**D 후속 작업**: `frontend/src/types/admin.ts`의 `provider: string`을 스키마 값에 맞춘 유니온으로
-좁히고, `theme.ts`의 `colors.provider` 키(`claude` → `anthropic`, `gemini` → `google`)를
-스키마 `provider` 값과 맞춘다. **디자인 값 변경이 아니라 키 이름 변경이다.**
-현재 목업은 표시용 라벨(`'Claude'` / `'OpenAI'` / `'Gemini'`)을 쓰고 있어 라벨 매핑이 필요하다.
-
-## GET /admin/llm-usage — 사용량 집계
-
-### 요청
-
-```
-GET /api/v1/admin/llm-usage?from=2026-08-13&to=2026-08-19
-```
-
-| 파라미터 | 필수 | 설명 |
-|---|---|---|
-| `from` / `to` | 아니오 | 집계 기간(날짜, KST 기준 여부 명시 필요). 생략 = 최근 7일 (화면 기본값) |
-
-### 응답 — 200
-
-```json
-{
-  "success": true,
-  "data": {
-    "summary": {
-      "totalCalls": 18294,
-      "totalTokens": 33012480,
-      "totalCostUsd": 26.8,
-      "failureRate": 0.023,
-      "estimated": { "totalTokens": true, "totalCostUsd": true }
-    },
-    "daily": [
-      {
-        "date": "2026-08-13",
-        "totalTokens": 4820000,
-        "costByProvider": [
-          { "provider": "claude", "costUsd": 2.18 },
-          { "provider": "openai", "costUsd": 1.24 }
-        ]
-      }
-    ],
-    "byModel": [
-      { "modelId": "claude-sonnet-5", "provider": "claude", "calls": 9840 }
-    ]
-  }
-}
-```
-
-### 필드 매핑
-
-| 필드 | 출처 |
-|---|---|
-| `summary.totalCalls` | `COUNT(*)` of `ai_invocations` |
-| `summary.totalTokens` | `SUM(input_tokens + output_tokens)` |
-| `summary.totalCostUsd` | `SUM(cost_usd)` |
-| `summary.failureRate` | `status='FAILED'` 비율 (0~1 실수) |
-| `daily[].totalTokens` | 일자별 토큰 합 |
-| `daily[].costByProvider[]` | 일자·프로바이더별 `SUM(cost_usd)` |
-| `byModel[]` | `(provider, model_name)`별 `COUNT(*)` |
-
-### ⚠️ 서버는 포맷된 문자열을 보내지 않는다
-
-프론트의 현재 타입은 이렇게 생겼다 (프로토타입 유산):
-
-```ts
-UsageSummaryCard { label: '총 호출 수', value: '18,294', unit: '건', estimated: false }
-```
-
-`label`(한국어 카드 제목)과 `value`(천단위 콤마·`33.0M`·`$26.80`·`2.3%`로 이미 포맷된 문자열)가
-**전부 표시용**이다. 서버가 이걸 만들면 문구·포맷을 바꿀 때마다 백엔드를 고쳐야 한다.
-
-→ 위 응답처럼 **원시 숫자만** 보내고, 카드 제목과 숫자 포맷(`33.0M`, `$26.80`, `2.3%`)은
-프론트가 만든다. 계약 확정 시 프론트 타입 수정 필요(D).
-
-같은 이유로 `ModelUsage.pct`(백분율)도 서버가 계산하지 않는다 — `calls`만 주면
-프론트가 비율을 낸다.
-
-### ✅ "추정" 라벨 — 스키마 V2에서 해소됨
-
-design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어 일부 값은 추정치입니다.
-**'추정' 라벨을 표시할 자리를 반드시 만드세요.**" 프론트는 이미 배지를 그리고 있다.
-
-이전에는 스키마에 어떤 값이 추정치인지 나타내는 컬럼이 없어 "특정 모델은 항상 추정"이라는
-규칙을 서버가 따로 들고 있어야 했다.
-
-**스키마 V2가 `ai_invocations.is_token_estimated BOOLEAN`을 추가했다.** 프로바이더가 토큰 수를
-주지 않아 추정한 호출은 이 플래그가 `TRUE`다. 서버는 위 응답의 `summary.estimated`를 이
-플래그의 집계로 채운다 — 해당 기간에 추정 호출이 하나라도 섞였으면 그 지표를 추정으로 표시한다.
-
-같이 추가된 컬럼:
-
-- `ai_invocations.is_fallback` — 기본 모델 실패로 대체 모델이 처리한 호출
-- `ai_invocations.status`에 `TIMEOUT` / `RATE_LIMITED` 추가 — 실패 원인을 `FAILED` 하나로 뭉개지 않는다
-
-**D 결정 필요**: `is_fallback`과 세분화된 실패 상태를 화면에 노출할지. 노출한다면 이 문서에
-응답 필드를 먼저 추가한다.
-
-### 비용 임계치 알림은 이 화면 범위 밖
-
-`cost_budgets` / `cost_alerts` 테이블이 스키마에 있고 요구사항에도 "임계치 알림"이 있지만,
-**임계치를 설정·조회하는 화면이 디자인에 없다.** 루트 CLAUDE.md §8 미결 사항에도
-"비용/실패 알림 채널 미정 (B 담당)"으로 남아 있다. 화면이 필요해지면 디자인 요청 후 추가한다.
+되살리려면 그 리비전의 downgrade가 테이블을 복구하고, 호출하는 쪽(A/B)이
+`ai_invocations`에 기록을 남기는 일이 선행돼야 한다 — 제거 시점에 그 기록이 한 행도
+없었다는 점이 이 결정의 근거이기도 했다.
 
 ---
 
-# 3. 데이터 보관 정책 (담당: C)
-
-화면: `/admin/retention`
-
-## GET /admin/retention — 정책 목록
+## GET /admin/retention — 정책 목록  ✅ 구현됨
 
 ### 응답 — 200
 
@@ -386,7 +271,7 @@ design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어
 | `articles` | `ARTICLES` ✓ |
 | `summaries` | `SUMMARIES` ✓ |
 | `logs` | `LOGS` ✓ |
-| `llm_calls` (LLM 호출 이력) | `INVOCATIONS` ✓ (V2에서 추가) |
+| `llm_calls` (LLM 호출 이력) | **제거됨** — 비용 추적 스코프 제외 (§8-17) |
 | — | `TRANSLATIONS` (목업에 없음) |
 | — | `FEED_ITEMS` (목업에 없음) |
 
@@ -439,13 +324,14 @@ design_plan.md §7: "토큰 수를 제공하지 않는 프로바이더가 있어
   ENUM이 5개로 고정적이므로 실용적이다. (제안)
 - **(b) 서버가 보낸다** — `retention_policies`에 컬럼 추가(스키마 변경).
 
-(a)를 제안한다. 위 응답 예시에 `name`/`description`이 없는 이유다.
+**(a)로 확정.** `frontend/src/api/admin.ts`가 `targetEntity` → 한국어 라벨 매핑을 갖는다.
+서버가 표시 문구를 만들면 문구를 고칠 때마다 백엔드를 배포해야 한다 — 위 "서버는 포맷된
+문자열을 보내지 않는다"와 같은 기준이다.
 
-## PATCH /admin/retention/{targetEntity} — 정책 수정
+## PATCH /admin/retention/{targetEntity} — 정책 수정  ✅ 구현됨
 
-화면의 "수정 → 저장" 버튼. **현재 프론트는 로컬 state만 바꾸고 서버로 보내지 않는다**
-(새로고침하면 초기화 — 프로토타입 동작을 그대로 유지한 상태). 이 엔드포인트가 생기면
-연결한다(D).
+화면의 "수정 → 저장" 버튼. 이전에는 프론트가 로컬 state만 바꿔서 새로고침하면 초기화됐는데,
+이제 실제로 서버에 반영된다. 관리자 권한 필수 — 401(미로그인)과 403(`ADMIN_REQUIRED`)을 구분한다.
 
 ### 요청
 
@@ -495,7 +381,7 @@ PATCH /api/v1/admin/retention/ARTICLES
 | ~~6~~ | ~~멀티 프로바이더로 갈지, Bedrock 단일로 갈지~~ → **해소.** 스키마 V2가 멀티 프로바이더로 확정 (`provider` + `model_name`) | ~~B · 디자인~~ |
 | ~~7~~ | ~~"추정" 플래그 근거 — 컬럼 추가 vs 서버 규칙~~ → **해소.** `ai_invocations.is_token_estimated` 추가 | ~~B (+C if 스키마)~~ |
 | ~~8~~ | ~~`ai_invocations`를 보관 정책 대상 ENUM에 추가할지~~ → **해소.** `target_entity`에 `INVOCATIONS` 추가 | ~~C~~ |
-| 9 | `recordCount` 산출 방식 (근사치 / 저장 / 제거) | C |
+| ~~9~~ | ~~`recordCount` 산출 방식~~ → **확정.** 정확한 `COUNT(*)`. 현 규모에서 충분히 빠르고 근사치의 오차가 오히려 혼란스럽다. 수백만 행이 되면 근사치 + `recordCountApproximate`로 전환 | ~~C~~ |
 | 10 | 보관 기간 축소 시 확인 절차 | C · 디자인 |
 | 11 | 집계 기간의 시간대 기준 (KST vs UTC) — 일별 차트 경계가 달라진다 | A · B |
 | ~~12~~ | ~~`ARTICLES` 보관 정책이 soft purge인지 hard delete인지~~ → **해소.** hard delete로 확정 (CLAUDE.md §8-14). 다만 요약·번역이 함께 삭제되므로 축소 확인 절차(10번)와 묶어서 봐야 한다 | ~~C · 디자인~~ |
