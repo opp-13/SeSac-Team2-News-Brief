@@ -1,0 +1,92 @@
+import type { PipelineRun } from '../types/admin'
+
+// docs/figma-export/data/mockData.ts의 mockPipelineRuns를 이관 (frontend/CLAUDE.md §2
+// 규칙3: "src/data/mockData.ts → MSW 핸들러"). 지금은 hooks/usePipelineRuns.ts가 이
+// 배열을 직접 감싸 쓴다 — feedMockData.ts와 같은 잠정 상태다.
+export const mockPipelineRuns: PipelineRun[] = [
+  {
+    id: 'run-20260819-0300',
+    executedAt: '2026-08-19T03:00:00Z',
+    relativeTime: '7시간 전',
+    status: 'success',
+    stages: [
+      { name: '뉴스 수집', status: 'success', duration: 42, count: 284 },
+      { name: '중복 제거', status: 'success', duration: 8, count: 231 },
+      { name: 'LLM 요약', status: 'success', duration: 187, count: 231 },
+      { name: '태그 분류', status: 'success', duration: 23, count: 231 },
+      { name: 'DB 저장', status: 'success', duration: 11, count: 231 },
+    ],
+    processedCount: 231,
+    errorCount: 0,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+  },
+  {
+    id: 'run-20260818-2100',
+    executedAt: '2026-08-18T21:00:00Z',
+    relativeTime: '어제 오후 9시',
+    status: 'partial',
+    stages: [
+      { name: '뉴스 수집', status: 'success', duration: 38, count: 312 },
+      { name: '중복 제거', status: 'success', duration: 9, count: 258 },
+      { name: 'LLM 요약', status: 'failure', duration: 203, count: 241 },
+      { name: '태그 분류', status: 'success', duration: 19, count: 241 },
+      { name: 'DB 저장', status: 'success', duration: 10, count: 241 },
+    ],
+    processedCount: 241,
+    errorCount: 17,
+    provider: 'openai',
+    model: 'gpt-4o',
+  },
+  {
+    id: 'run-20260818-1500',
+    executedAt: '2026-08-18T15:00:00Z',
+    relativeTime: '어제 오후 3시',
+    status: 'success',
+    stages: [
+      { name: '뉴스 수집', status: 'success', duration: 41, count: 198 },
+      { name: '중복 제거', status: 'success', duration: 7, count: 164 },
+      { name: 'LLM 요약', status: 'success', duration: 142, count: 164 },
+      { name: '태그 분류', status: 'success', duration: 18, count: 164 },
+      { name: 'DB 저장', status: 'success', duration: 9, count: 164 },
+    ],
+    processedCount: 164,
+    errorCount: 0,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+  },
+  {
+    id: 'run-20260818-0900',
+    executedAt: '2026-08-18T09:00:00Z',
+    relativeTime: '어제 오전 9시',
+    status: 'failure',
+    stages: [
+      { name: '뉴스 수집', status: 'success', duration: 39, count: 276 },
+      { name: '중복 제거', status: 'failure', duration: 4, count: 0 },
+      { name: 'LLM 요약', status: 'skipped', count: 0 },
+      { name: '태그 분류', status: 'skipped', count: 0 },
+      { name: 'DB 저장', status: 'skipped', count: 0 },
+    ],
+    processedCount: 0,
+    errorCount: 276,
+    provider: 'openai',
+    model: 'gpt-4o',
+  },
+  {
+    id: 'run-20260819-0900',
+    executedAt: '2026-08-19T09:00:00Z',
+    relativeTime: '1시간 후',
+    status: 'pending',
+    stages: [
+      { name: '뉴스 수집', status: 'pending' },
+      { name: '중복 제거', status: 'pending' },
+      { name: 'LLM 요약', status: 'pending' },
+      { name: '태그 분류', status: 'pending' },
+      { name: 'DB 저장', status: 'pending' },
+    ],
+    processedCount: 0,
+    errorCount: 0,
+    provider: 'anthropic',
+    model: 'claude-sonnet-5',
+  },
+]

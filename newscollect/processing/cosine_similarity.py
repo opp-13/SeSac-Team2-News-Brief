@@ -2,16 +2,16 @@ import pymysql
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
-from processing.db import _db_config
+from processing.db import _category_slug, _db_config
 
 # 원본(sentence_similarity/cosine_similarity.py) 대비 두 가지 수정:
 #   1. DB_CONFIG 하드코딩(localhost/root/password/db) 대신 db.py와 같은
 #      DB_HOST/DB_USER/DB_PASSWORD/DB_NAME 환경변수를 씀 -- 이 사본은 실제
 #      DB에 붙으므로 자리채움 값으로는 항상 연결이 실패한다.
 #   2. 존재하지 않는 articles.tag 컬럼 대신 article_tags/tags를 조인한다.
-#      실제 스키마(schema-v2-proposal의 schema_no_index.sql)엔 태그가
-#      article_tags 다대다 테이블로 연결돼 있고, tags.name으로 매칭한다
-#      (db.py의 _lookup_tag_id와 동일한 기준).
+#      실제 스키마엔 태그가 article_tags 다대다 테이블로 연결돼 있다.
+#   3. tags.name이 아니라 tags.slug로 매칭한다 -- name은 화면 표시명(한국어)이라
+#      바뀔 수 있고, slug가 변하지 않는 기계 키다 (db.py의 _lookup_tag_id와 동일한 기준).
 
 SIMILARITY_THRESHOLD = 0.8
 
@@ -36,9 +36,9 @@ def dedup_stage(items: list, tag: str) -> list:
                 FROM articles a
                 JOIN article_tags at ON at.article_id = a.id
                 JOIN tags t ON t.id = at.tag_id
-                WHERE t.name = %s
+                WHERE t.slug = %s
                 """,
-                (tag,),
+                (_category_slug(tag),),
             )
             existing_titles = [row[0] for row in cur.fetchall()]
     except Exception as e:
