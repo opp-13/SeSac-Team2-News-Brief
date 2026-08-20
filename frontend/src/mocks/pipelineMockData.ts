@@ -18,7 +18,7 @@ export const mockPipelineRuns: PipelineRun[] = [
     ],
     processedCount: 231,
     errorCount: 0,
-    provider: 'Claude',
+    provider: 'anthropic',
     model: 'claude-sonnet-5',
   },
   {
@@ -35,7 +35,7 @@ export const mockPipelineRuns: PipelineRun[] = [
     ],
     processedCount: 241,
     errorCount: 17,
-    provider: 'OpenAI',
+    provider: 'openai',
     model: 'gpt-4o',
   },
   {
@@ -52,7 +52,7 @@ export const mockPipelineRuns: PipelineRun[] = [
     ],
     processedCount: 164,
     errorCount: 0,
-    provider: 'Claude',
+    provider: 'anthropic',
     model: 'claude-sonnet-5',
   },
   {
@@ -69,7 +69,7 @@ export const mockPipelineRuns: PipelineRun[] = [
     ],
     processedCount: 0,
     errorCount: 276,
-    provider: 'OpenAI',
+    provider: 'openai',
     model: 'gpt-4o',
   },
   {
@@ -86,7 +86,7 @@ export const mockPipelineRuns: PipelineRun[] = [
     ],
     processedCount: 0,
     errorCount: 0,
-    provider: 'Claude',
+    provider: 'anthropic',
     model: 'claude-sonnet-5',
   },
 ]

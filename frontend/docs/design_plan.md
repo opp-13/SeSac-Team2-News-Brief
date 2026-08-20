@@ -54,12 +54,17 @@
 
 ### 프로바이더 구분색 (관리자 차트 전용)
 
-| 프로바이더 | HEX | Tailwind |
-|---|---|---|
-| OpenAI | `#6D28D9` | violet-700 |
-| Claude | `#C2410C` | orange-700 |
-| Gemini | `#BE185D` | pink-700 |
-| 기타 | `#475569` | slate-600 |
+| 프로바이더 | 스키마 `provider` 값 | HEX | Tailwind |
+|---|---|---|---|
+| OpenAI | `openai` | `#6D28D9` | violet-700 |
+| Claude | `anthropic` | `#C2410C` | orange-700 |
+| Gemini | `google` | `#BE185D` | pink-700 |
+| 기타 | (그 외 모든 값) | `#475569` | slate-600 |
+
+> 스키마 V2가 `provider` 컬럼을 도입하면서(루트 CLAUDE.md §8-10) `theme.ts`의
+> `colors.provider` 키를 스키마 값에 맞췄다: `claude` → `anthropic`, `gemini` → `google`.
+> **색상 값은 위 표 그대로 바뀌지 않았다 — 키 이름만 바뀌었다.**
+> 표시 라벨('Claude' 등)은 `utils/provider.ts`가 붙인다.
 
 ### 특수
 

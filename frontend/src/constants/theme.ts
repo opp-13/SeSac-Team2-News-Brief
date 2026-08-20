@@ -56,10 +56,14 @@ export const colors = {
   neutral: { bg: '#F1F5F9', text: '#334155' },
 
   // 프로바이더 구분색 (관리자 차트 전용 — 반드시 선 패턴과 함께 사용)
+  //
+  // 키는 스키마 `provider` 컬럼 값이다(`claude`/`gemini`가 아니라 `anthropic`/`google`).
+  // design_plan.md §2의 색은 그대로다 — **값이 아니라 키 이름만 바꿨다.**
+  // 라벨('Claude' 등)은 utils/provider.ts 가 붙인다.
   provider: {
     openai: '#6D28D9', // violet-700
-    claude: '#C2410C', // orange-700
-    gemini: '#BE185D', // pink-700
+    anthropic: '#C2410C', // orange-700
+    google: '#BE185D', // pink-700
     other: '#475569', // slate-600
   },
 

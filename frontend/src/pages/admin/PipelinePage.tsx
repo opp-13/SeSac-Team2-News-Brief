@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { usePipelineRuns } from '../../hooks/usePipelineRuns'
 import type { PipelineRun, PipelineStage } from '../../types/admin'
 import { colors, typeScale, radius } from '../../constants/theme'
+import { providerLabel } from '../../utils/provider'
 
 // docs/figma-export/pages/admin/PipelinePage.tsx 이식.
 //
@@ -282,7 +283,7 @@ function SideDrawer({ run, onClose }: { run: PipelineRun; onClose: () => void })
             {[
               { label: '처리 건수', value: run.processedCount.toLocaleString() },
               { label: '오류 건수', value: run.errorCount.toLocaleString() },
-              { label: '프로바이더', value: run.provider },
+              { label: '프로바이더', value: providerLabel(run.provider) },
             ].map((s) => (
               <div key={s.label} className="bg-slate-50 rounded-lg p-3">
                 <p className="text-slate-500 mb-1" style={{ fontSize: 12 }}>

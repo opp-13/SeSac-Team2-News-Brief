@@ -13,6 +13,7 @@ import {
 } from 'recharts'
 import { useLLMUsage } from '../../hooks/useLLMUsage'
 import { colors, typeScale, radius } from '../../constants/theme'
+import { providerLabel, type Provider } from '../../utils/provider'
 
 // docs/figma-export/pages/admin/LLMUsagePage.tsx 이식.
 //
@@ -36,11 +37,14 @@ import { colors, typeScale, radius } from '../../constants/theme'
 // §4 "상태 화면 4종": 로딩/오류/비어있음 구현. "끝 도달"은 이 화면에 스크롤 페이지네이션이
 // 없어(집계 대시보드) 해당 없다.
 
+// 키는 스키마 `provider` 값이다 — 차트 dataKey / theme.ts colors.provider / 목업이 같은
+// 식별자를 쓰게 해서, 하나만 바뀌어도 타입 에러로 잡히게 한다.
+// 화면에 보이는 이름은 providerLabel()이 붙인다.
 const PROVIDER_STYLES = {
   openai: { stroke: colors.provider.openai, strokeDasharray: '4 2', fill: '#EDE9FE' },
-  claude: { stroke: colors.provider.claude, strokeDasharray: undefined, fill: '#FED7AA' },
-  gemini: { stroke: colors.provider.gemini, strokeDasharray: '2 2', fill: '#FCE7F3' },
-} as const
+  anthropic: { stroke: colors.provider.anthropic, strokeDasharray: undefined, fill: '#FED7AA' },
+  google: { stroke: colors.provider.google, strokeDasharray: '2 2', fill: '#FCE7F3' },
+} as const satisfies Record<Provider, { stroke: string; strokeDasharray?: string; fill: string }>
 
 // Recharts 기본 Legend는 dataKey를 그대로 넘겨주지 않거나 대시 패턴을 아이콘에 반영하지
 // 않을 수 있어, 프로바이더별 stroke/strokeDasharray를 직접 그리는 커스텀 범례를 쓴다.
@@ -181,7 +185,7 @@ export default function LLMUsagePage() {
                 <Area
                   type="monotone"
                   dataKey="openai"
-                  name="OpenAI"
+                  name={providerLabel('openai')}
                   stroke={PROVIDER_STYLES.openai.stroke}
                   strokeDasharray={PROVIDER_STYLES.openai.strokeDasharray}
                   fill={PROVIDER_STYLES.openai.fill}
@@ -189,19 +193,19 @@ export default function LLMUsagePage() {
                 />
                 <Area
                   type="monotone"
-                  dataKey="claude"
-                  name="Claude"
-                  stroke={PROVIDER_STYLES.claude.stroke}
-                  fill={PROVIDER_STYLES.claude.fill}
+                  dataKey="anthropic"
+                  name={providerLabel('anthropic')}
+                  stroke={PROVIDER_STYLES.anthropic.stroke}
+                  fill={PROVIDER_STYLES.anthropic.fill}
                   strokeWidth={2}
                 />
                 <Area
                   type="monotone"
-                  dataKey="gemini"
-                  name="Gemini"
-                  stroke={PROVIDER_STYLES.gemini.stroke}
-                  strokeDasharray={PROVIDER_STYLES.gemini.strokeDasharray}
-                  fill={PROVIDER_STYLES.gemini.fill}
+                  dataKey="google"
+                  name={providerLabel('google')}
+                  stroke={PROVIDER_STYLES.google.stroke}
+                  strokeDasharray={PROVIDER_STYLES.google.strokeDasharray}
+                  fill={PROVIDER_STYLES.google.fill}
                   strokeWidth={2}
                 />
               </AreaChart>
@@ -223,7 +227,7 @@ export default function LLMUsagePage() {
                           {m.model}
                         </span>
                         <span className="text-slate-400 ml-2" style={{ fontSize: 12 }}>
-                          {m.provider}
+                          {providerLabel(m.provider)}
                         </span>
                       </div>
                       <span
@@ -238,12 +242,10 @@ export default function LLMUsagePage() {
                         className="h-full rounded-full"
                         style={{
                           width: `${m.pct}%`,
-                          background:
-                            m.provider === 'Claude'
-                              ? colors.provider.claude
-                              : m.provider === 'OpenAI'
-                                ? colors.provider.openai
-                                : colors.provider.gemini,
+                          // 모르는 프로바이더가 오면 '기타' 색으로 떨어뜨린다. 이전에는
+                          // 3중 삼항의 마지막 분기가 전부 Gemini 색이라, 낯선 값이 오면
+                          // Gemini로 잘못 보였다.
+                          background: colors.provider[m.provider] ?? colors.provider.other,
                         }}
                       />
                     </div>
