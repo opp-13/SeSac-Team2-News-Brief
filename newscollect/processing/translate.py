@@ -10,12 +10,20 @@ TRANSLATION_FAILURE_PREFIX = "(번역 실패:"
 async def _translate_all(items: list, target: str) -> None:
     async with Translator() as translator:
         for item in items:
+            if item.language == "ko":
+                item.summary_ko = None  # already Korean
+                item.title_ko = None
+                continue
+
+            try:
+                result = await translator.translate(item.title, dest=target)
+                item.title_ko = result.text
+            except Exception as e:
+                item.title_ko = f"{TRANSLATION_FAILURE_PREFIX} {e})"
+                print(f"[translate] '{item.title[:30]}...' 제목 번역 실패: {e}", file=sys.stderr)
+
             if not item.summary or item.summary.startswith(SUMMARY_FAILURE_PREFIX):
                 continue  # no summary to translate
-
-            if item.language == "ko":
-                item.summary_ko = None  # summary is already Korean
-                continue
 
             try:
                 result = await translator.translate(item.summary, dest=target)
@@ -26,6 +34,6 @@ async def _translate_all(items: list, target: str) -> None:
 
 
 def translate_stage(items: list, target: str = "ko") -> list:
-    """Fill item.summary_ko for every item whose summary isn't already Korean."""
+    """Fill item.title_ko / item.summary_ko for every item not already in Korean."""
     asyncio.run(_translate_all(items, target))
     return items
