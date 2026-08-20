@@ -13,8 +13,10 @@ class FreeNewsProvider(NewsProvider):
     def __init__(self):
         self._client = FreeNewsClient()
 
-    def search_by_category(self, category: str, display: int = 10) -> list[ArticleItem]:
-        articles = self._client.search_news(topic=category)[:display]
+    def search_by_category(
+        self, category: str, display: int = 10, language: str = "en"
+    ) -> list[ArticleItem]:
+        articles = self._client.search_news(topic=category, language=language)[:display]
 
         return [
             ArticleItem(

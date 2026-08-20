@@ -88,5 +88,9 @@ class ArticleItem:
 
 class NewsProvider(ABC):
     @abstractmethod
-    def search_by_category(self, category: str, display: int = 10) -> list:
-        """Return up to `display` ArticleItems for the given category."""
+    def search_by_category(self, category: str, display: int = 10, language: str = "en") -> list:
+        """Return up to `display` ArticleItems for the given category.
+
+        `language` is a hint ("ko" | "en"); providers that have no language
+        concept (e.g. NAVER) ignore it.
+        """
