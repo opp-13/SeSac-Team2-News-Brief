@@ -11,7 +11,13 @@ from sqlalchemy.orm import Session
 
 from app.modules.auth.models.user import User  # 같은 담당(C) 소유 모듈이므로 참조 허용
 from app.modules.feed.models.feed_item import FeedItem
-from app.modules.feed.models.read_only import Article, ArticleTag, Summary, Translation
+from app.modules.feed.models.read_only import (
+    FEED_READY_STATUSES,
+    Article,
+    ArticleTag,
+    Summary,
+    Translation,
+)
 from app.modules.feed.models.tag import UserTag
 
 # 태그 매칭은 `article_tags` 매핑으로 한다 (schema.sql V2 §2, "큐레이션 매칭 기준").
@@ -21,7 +27,6 @@ from app.modules.feed.models.tag import UserTag
 #   2. 미매칭 — 실제 데이터에서 대부분의 태그가 제목에 아예 안 나온다. 시드 기준으로
 #      "반도체"·"경제"·"정치" 등 9개 태그 전부 제목매칭 0건인데 article_tags에는 매핑이
 #      있었다. 그래서 관심 태그를 고른 신규 사용자의 피드가 **한 건도 만들어지지 않았다.**
-ARTICLE_STATUS_READY = "SUMMARIZED"  # articles.status ENUM (schema.sql V2)
 
 
 @dataclass
@@ -53,7 +58,7 @@ def curate_for_user(db: Session, *, user: User, article_limit: int = 200) -> tup
     rows = db.execute(
         select(Article, ArticleTag.tag_id)
         .join(ArticleTag, ArticleTag.article_id == Article.id)
-        .where(Article.status == ARTICLE_STATUS_READY, ArticleTag.tag_id.in_(tag_ids))
+        .where(Article.status.in_(FEED_READY_STATUSES), ArticleTag.tag_id.in_(tag_ids))
         .order_by(Article.published_at.desc())
         .limit(article_limit)
     ).all()

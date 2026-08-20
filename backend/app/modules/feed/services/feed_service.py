@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 from app.common.exceptions import NotFoundError
 from app.modules.feed.models.feed_item import FeedItem
 from app.modules.feed.models.read_only import (
+    FEED_READY_STATUSES,
     Article,
     ArticleTag,
     NewsSource,
@@ -30,9 +31,6 @@ from app.modules.feed.models.tag import TAG_TYPE_CATEGORY, Tag, UserTag
 # [PROV-F15] 목록에 노출할 기본 요약 타입. "요약 3종 저장 여부"가 미결이므로 상수로 분리해 둔다.
 LIST_SUMMARY_TYPE = "THREE_LINE"
 
-# 요약이 끝난 기사만 목록에 노출한다. 조회 시점에 요약을 만들지 않는다는 절대 제약
-# (CLAUDE.md §1) 때문에, 요약이 없는 기사는 애초에 목록에 올리지 않는다.
-SUMMARIZED_STATUS = "SUMMARIZED"
 
 
 @dataclass
@@ -202,7 +200,8 @@ def _list_guest(
 ) -> tuple[list[FeedRow], int | None, bool]:
     stmt = (
         select(Article)
-        .where(Article.status == SUMMARIZED_STATUS)
+        # 요약이 끝난 기사만 노출한다(조회 시점 생성 금지 — CLAUDE.md §1).
+        .where(Article.status.in_(FEED_READY_STATUSES))
         .order_by(Article.id.desc())
         .limit(limit + 1)
     )

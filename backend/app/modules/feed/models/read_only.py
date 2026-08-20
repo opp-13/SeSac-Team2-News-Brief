@@ -22,6 +22,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base, BigIntType
 
+# `articles.status`는 진행 단계다: COLLECTED → SUMMARIZED → TRANSLATED (실패 시 FAILED).
+#
+# 피드에 올릴 수 있는 것은 **요약이 끝난 이후 단계 전부**다. TRANSLATED는 SUMMARIZED보다
+# 더 진행된 상태지 덜 진행된 게 아니다. 이전에는 `== 'SUMMARIZED'`로만 걸러서, 수집
+# 파이프라인이 번역까지 마친 기사가 피드와 게스트 목록에서 통째로 사라졌다
+# (A의 processing/db.py가 번역 저장 후 status를 TRANSLATED로 올린다).
+FEED_READY_STATUSES = ("SUMMARIZED", "TRANSLATED")
+
 
 class NewsSource(Base):
     """언론사/뉴스 공급자 (A 소유). articles.source_id가 이 테이블을 가리킨다."""
