@@ -1,11 +1,12 @@
 {
   "name": "newsbrief-frontend",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:ci": "VITE_APP_VERSION=$(git rev-parse --short HEAD 2>/dev/null) npm run build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
