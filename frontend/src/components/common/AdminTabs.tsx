@@ -3,7 +3,6 @@ import { colors, typeScale } from '../../constants/theme'
 
 const TABS = [
   { path: '/admin/pipeline', label: '배치 실행 이력' },
-  { path: '/admin/llm-usage', label: 'LLM 비용·사용량' },
   { path: '/admin/retention', label: '데이터 보관 정책' },
 ]
 

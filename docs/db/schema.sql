@@ -34,8 +34,12 @@
 --   5. retention_policies.strategy 에서 PARTITION_DROP 제거
 --      → 파티셔닝을 뺐으므로 실행 불가능한 값이다. 관리자 화면에 고를 수 없는
 --        선택지가 뜨거나 배치가 런타임에 실패하는 경로를 없앤다.
---   6. retention_policies.target_entity 에 INVOCATIONS 추가
---      → ai_invocations 보관 정책을 표현할 수 있게 한다.
+--   6. LLM 호출량/비용 추적을 스코프에서 제외 (팀 결정)
+--      → ai_invocations / cost_budgets / cost_alerts 테이블 제거
+--      → retention_policies.target_entity 에서 INVOCATIONS 제거 (가리킬 테이블이 없다)
+--      → 프로바이더를 Groq 하나로 고정하면서 프로바이더별 비용 비교의 실익이 사라졌다.
+--        summaries/translations 의 provider·model_name 은 남긴다 — 비용이 아니라
+--        "어떤 모델이 만든 결과인가"를 기록하는 값이라 품질 추적에 계속 쓰인다.
 --
 -- [삭제 순서]
 -- articles 행을 실제로 지워야 한다면 다음 순서만 허용됩니다.
@@ -277,63 +281,18 @@ CREATE TABLE feed_items (
 
 
 -- ---------------------------------------------------------------------
--- 5. 운영 (비용 / 보관)
+-- 5. 운영 (데이터 보관)
 -- ---------------------------------------------------------------------
 
-CREATE TABLE ai_invocations (
-  id                 BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  job_id             BIGINT UNSIGNED NULL,
-  article_id         BIGINT UNSIGNED NULL,
-  task_type          ENUM('SUMMARIZE','TRANSLATE') NOT NULL,
-  provider           VARCHAR(50)   NOT NULL,
-  model_name         VARCHAR(100)  NOT NULL,
-  input_tokens       INT UNSIGNED  NOT NULL DEFAULT 0,
-  output_tokens      INT UNSIGNED  NOT NULL DEFAULT 0,
-  is_token_estimated BOOLEAN       NOT NULL DEFAULT FALSE
-                     COMMENT '프로바이더가 토큰 수를 주지 않아 추정한 경우 TRUE',
-  cost_usd           DECIMAL(10,6) NOT NULL DEFAULT 0
-                     COMMENT '호출 시점 단가로 계산한 값을 그대로 보존',
-  latency_ms         INT UNSIGNED  NULL,
-  is_fallback        BOOLEAN       NOT NULL DEFAULT FALSE
-                     COMMENT '기본 모델 실패로 대체 모델이 처리한 경우 TRUE',
-  status             ENUM('SUCCESS','FAILED','TIMEOUT','RATE_LIMITED') NOT NULL DEFAULT 'SUCCESS',
-  created_at         DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  CONSTRAINT fk_inv_job     FOREIGN KEY (job_id)     REFERENCES batch_jobs(id) ON DELETE SET NULL,
-  CONSTRAINT fk_inv_article FOREIGN KEY (article_id) REFERENCES articles(id)   ON DELETE SET NULL
-) ENGINE=InnoDB COMMENT='LLM 호출 단위 비용/사용량 추적';
--- 적재 지점: B 모듈(modules/ai)의 LLM 클라이언트 어댑터. 어떤 라이브러리로 호출하든
--- 호출 1건 = 이 테이블 1행이 되도록 유지한다 (스키마는 클라이언트에 결합하지 않는다).
 
 
-CREATE TABLE cost_budgets (
-  id              INT UNSIGNED  NOT NULL AUTO_INCREMENT,
-  period_type     ENUM('DAILY','MONTHLY') NOT NULL,
-  threshold_usd   DECIMAL(10,2) NULL,
-  threshold_calls INT UNSIGNED  NULL,
-  notify_channel  VARCHAR(100)  NOT NULL COMMENT 'slack webhook / email 등',
-  is_active       BOOLEAN       NOT NULL DEFAULT TRUE,
-  created_at      DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  UNIQUE KEY uk_budgets_period (period_type) COMMENT '기간 유형별 예산은 하나만 유지'
-) ENGINE=InnoDB COMMENT='비용/호출 임계치 설정';
 
 
-CREATE TABLE cost_alerts (
-  id           BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-  budget_id    INT UNSIGNED    NOT NULL,
-  actual_cost  DECIMAL(10,2)   NOT NULL DEFAULT 0,
-  actual_calls INT UNSIGNED    NOT NULL DEFAULT 0,
-  is_notified  BOOLEAN         NOT NULL DEFAULT FALSE,
-  triggered_at DATETIME        NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (id),
-  CONSTRAINT fk_alerts_budget FOREIGN KEY (budget_id) REFERENCES cost_budgets(id) ON DELETE CASCADE
-) ENGINE=InnoDB COMMENT='임계치 초과 알림 이력';
 
 
 CREATE TABLE retention_policies (
   id               INT UNSIGNED NOT NULL AUTO_INCREMENT,
-  target_entity    ENUM('ARTICLES','SUMMARIES','TRANSLATIONS','FEED_ITEMS','LOGS','INVOCATIONS') NOT NULL,
+  target_entity    ENUM('ARTICLES','SUMMARIES','TRANSLATIONS','FEED_ITEMS','LOGS') NOT NULL,
   retention_days   INT UNSIGNED NOT NULL,
   -- V1.1의 PARTITION_DROP은 제거했다. articles 파티셔닝을 뺐으므로 실행할 수 없는 값이고,
   -- ENUM에 남겨 두면 관리자 화면의 선택지로 노출돼 배치가 런타임에 실패한다.
@@ -380,8 +339,6 @@ CREATE TABLE retention_policies (
 -- 관리자 화면
 --   ALTER TABLE batch_jobs   ADD KEY idx_jobs_type_status (job_type, status, created_at);
 --   ALTER TABLE job_logs     ADD KEY idx_logs_job_level (job_id, level);
---   ALTER TABLE ai_invocations ADD KEY idx_inv_created (created_at);
---   ALTER TABLE ai_invocations ADD KEY idx_inv_model (provider, model_name, created_at);
 --   ALTER TABLE summaries    ADD KEY idx_summaries_review (review_status, created_at);
 --
 -- 제목 검색 (검색 기능 구현 시)
@@ -405,11 +362,6 @@ CREATE TABLE retention_policies (
 --      참조 무결성을 DB가 보장하는 편이 애플리케이션 부담이 적습니다.
 --      url_hash 유니크가 정상 동작하게 되는 것이 부수 효과로 따라옵니다.
 --
--- 2. ai_invocations 집계 테이블 분리
---    대시보드 차트를 원본 이력에서 직접 집계하면 기간이 길어질수록 느려집니다.
---    일자·프로바이더·모델별 집계 테이블을 두고
---    원본은 단기 보관, 집계는 장기 보관하는 구조를 권장합니다.
---
 -- 3. 원문 선택 삭제  → RESTRICT + hard delete 로 확정 (V2)
 --    articles → summaries / feed_items FK 를 RESTRICT 로 두었으므로,
 --    보관 배치가 articles 를 지우려 하면 요약이 남아 있는 한 실패합니다.
@@ -428,10 +380,4 @@ CREATE TABLE retention_policies (
 --    같은 원칙을 LLM 클라이언트에도 적용해 헤더에서 라이브러리명을 빼고,
 --    프로바이더/모델은 provider / model_name 컬럼 값으로만 기록합니다.
 --
--- 6. cost_budgets 의 uk_budgets_period (period_type)  → 결정 필요 (B 담당)
---    DAILY/MONTHLY 각 1행만 허용되므로 프로바이더별 예산을 둘 수 없습니다.
---    다중 프로바이더로 간 이상 "프로바이더별 일일 한도"가 필요해질 수 있습니다.
---    필요해지면 provider 컬럼 추가 + UNIQUE(period_type, provider)로 넓히되,
---    MySQL 유니크는 NULL 중복을 허용하므로 "전체 예산"의 유일성은 따로 보장해야 합니다.
---    초기에는 전체 한도 하나로 충분하다고 보고 현행 유지합니다.
 -- =====================================================================

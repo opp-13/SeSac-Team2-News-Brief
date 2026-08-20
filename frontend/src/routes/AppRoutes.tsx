@@ -7,7 +7,6 @@ import LoginPage from '../pages/auth/LoginPage'
 import SignupPage from '../pages/auth/SignupPage'
 import NotFoundPage from '../pages/common/NotFoundPage'
 import PipelinePage from '../pages/admin/PipelinePage'
-import LLMUsagePage from '../pages/admin/LLMUsagePage'
 import RetentionPage from '../pages/admin/RetentionPage'
 import SettingsPage from '../pages/common/SettingsPage'
 
@@ -42,7 +41,6 @@ export default function AppRoutes() {
         >
           <Route index element={<Navigate to="/admin/pipeline" replace />} />
           <Route path="pipeline" element={<PipelinePage />} />
-          <Route path="llm-usage" element={<LLMUsagePage />} />
           <Route path="retention" element={<RetentionPage />} />
         </Route>
 
