@@ -29,7 +29,7 @@ def replace_my_tags(
     user: User = Depends(get_current_user),
     db=Depends(get_db),
 ):
-    tags = tag_service.replace_user_tags(db, user.id, body.tag_ids)
+    tags, _created = tag_service.replace_user_tags(db, user, body.tag_ids)
     db.commit()
     return tags
 

@@ -12,7 +12,9 @@ from app.modules.feed.schemas.base import ApiModel
 
 
 class FeedItemResponse(ApiModel):  # [PROV-F11]
-    feed_item_id: int
+    # 게스트 목록은 feed_items 행이 없으므로 null이다 (docs/api-contracts/feed.md 이중 모드).
+    # 프런트가 기사를 식별할 때는 article_id를 쓰고, 북마크에만 feed_item_id가 필요하다.
+    feed_item_id: int | None
     article_id: int
     title: str
     press: str | None
@@ -22,7 +24,10 @@ class FeedItemResponse(ApiModel):  # [PROV-F11]
     summary: str | None
     summary_type: str | None
     original_url: str  # [PROV-F12] 원문 링크 제공 (필드명 D 확인 필요)
-    is_bookmarked: bool = False
+    # 행의 태그 칩용. 매칭된 태그가 맨 앞에 온다. 게스트는 빈 배열(design_plan §7).
+    tags: list[str] = []
+    # 게스트 필터 칩이 쓰는 카테고리 이름. 매핑이 없으면 null.
+    category: str | None = None
 
 
 class FeedListResponse(ApiModel):  # [PROV-F13]
@@ -43,4 +48,3 @@ class FeedDetailResponse(ApiModel):  # [PROV-F14]
     one_line_summary: str | None = None
     three_line_summary: str | None = None
     detail_summary: str | None = None
-    is_bookmarked: bool = False

@@ -5,7 +5,7 @@ D의 계약 문서가 snake_case로 확정되면 `alias_generator`만 제거하�
 개별 스키마에서 필드명을 하드코딩으로 바꾸지 말 것.
 
 [TODO-SHARED] 동일 클래스가 feed 모듈에도 있다. 계약 확정 후 `app/common`으로 승격
-(공용 영역이므로 별도 PR + 전원 리뷰 필요).
+(공용 영역이므로 옮기게 되면 팀에 알린다).
 """
 
 from pydantic import BaseModel, ConfigDict

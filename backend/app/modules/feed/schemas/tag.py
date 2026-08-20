@@ -16,7 +16,9 @@ class TagResponse(ApiModel):
 
     id: int
     name: str
-    category: str | None = None
+    # tags.tag_type ENUM('CATEGORY','KEYWORD'). 프런트는 CATEGORY인 것만
+    # 게스트 필터 칩으로 쓴다 (스키마에 category 컬럼은 없다).
+    tag_type: str
 
 
 class TagListResponse(ApiModel):

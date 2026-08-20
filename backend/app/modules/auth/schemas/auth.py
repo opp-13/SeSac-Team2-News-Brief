@@ -28,6 +28,8 @@ class UserResponse(ApiModel):  # [PROV-A11]
     id: int
     email: EmailStr
     nickname: str
+    # 프런트 useAuth().isAdmin 이 이 값으로 결정된다 (USER | ADMIN).
+    role: str
     preferred_language: str
     created_at: datetime
 

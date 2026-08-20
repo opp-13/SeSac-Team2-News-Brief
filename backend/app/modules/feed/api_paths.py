@@ -20,9 +20,9 @@ MY_TAG_DELETE = "/{tag_id}"  # DELETE ME_TAGS_PREFIX/{tag_id}  [PROV-T04]
 FEED_PREFIX = f"{API_PREFIX}/feed"              # [PROV-F01]
 FEED_LIST = ""                                  # GET  FEED_PREFIX
 FEED_DETAIL = "/{feed_item_id}"                 # GET  FEED_PREFIX/{feedItemId}   [PROV-F02]
-FEED_BOOKMARK = "/{feed_item_id}/bookmark"      # POST/DELETE                     [PROV-F03]
+# 북마크는 기능 범위가 아니다 (design_plan.md §6.3 "공유·스크랩 넣지 않는다",
+# frontend/CLAUDE.md §0.2). 경로·라우터·모델을 모두 제거했다.
 
-BOOKMARK_PREFIX = f"{API_PREFIX}/me/bookmarks"  # [PROV-F04] 미구현
 
 # ── 쿼리 파라미터 기본값 ──────────────────────────────────────────────────────
 DEFAULT_PAGE_SIZE = 20  # [PROV-F05] limit 기본값; 허용 범위 1-50
