@@ -6,17 +6,25 @@
 // 값은 스키마를 따르고, 사람이 읽는 이름은 여기서 붙인다.
 // (docs/api-contracts/admin.md "provider — 스키마 V2에서 해소됨")
 //
-// 프로바이더를 추가하려면 PROVIDERS 와 LABELS, 그리고 theme.ts 의 colors.provider 를
-// 함께 늘린다. 셋이 어긋나면 차트에서 색이 빠지거나 라벨이 식별자로 노출된다.
+// 라벨만 추가하려면 LABELS 에 한 줄이면 된다. 차트에 고유 색까지 주려면 PROVIDERS 와
+// theme.ts 의 colors.provider 를 함께 늘린다 — 색 배정은 디자인 결정이다.
 
+// 차트에 고유 색이 배정된 프로바이더. 색은 design_plan.md §2가 정한다.
 export const PROVIDERS = ['openai', 'anthropic', 'google'] as const
 
 export type Provider = (typeof PROVIDERS)[number]
 
-const LABELS: Record<Provider, string> = {
+// 라벨은 색과 별개로 둔다. 색 배정은 디자인 결정이지만 라벨은 아니라서, 색이 아직 없는
+// 프로바이더도 이름만은 사람이 읽을 수 있게 보여줄 수 있다.
+//
+// `groq`은 수집 파이프라인이 실제로 쓰는 요약 프로바이더다
+// (newscollect/processing/db.py가 summaries.provider='groq'으로 기록한다).
+// 차트 색은 아직 배정되지 않아 '기타'(slate-600)로 떨어진다 — 디자인 결정 대기.
+const LABELS: Record<string, string> = {
   openai: 'OpenAI',
   anthropic: 'Claude',
   google: 'Gemini',
+  groq: 'Groq',
 }
 
 export function isKnownProvider(value: string): value is Provider {
@@ -29,5 +37,5 @@ export function isKnownProvider(value: string): value is Provider {
  * 라벨이 빠지는 것보다 낯선 식별자라도 보이는 편이 낫다.
  */
 export function providerLabel(provider: string): string {
-  return isKnownProvider(provider) ? LABELS[provider] : provider
+  return LABELS[provider] ?? provider
 }

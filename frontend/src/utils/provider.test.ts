@@ -8,6 +8,12 @@ describe('providerLabel', () => {
     expect(providerLabel('google')).toBe('Gemini')
   })
 
+  it('차트 색이 없는 프로바이더도 라벨은 보여준다', () => {
+    // groq은 수집 파이프라인이 실제로 쓰지만 아직 차트 색이 배정되지 않았다.
+    expect(providerLabel('groq')).toBe('Groq')
+    expect(isKnownProvider('groq')).toBe(false) // 색 배정 대상은 아니다
+  })
+
   it('모르는 값이 오면 원본을 그대로 보여준다', () => {
     // 스키마의 provider는 ENUM이 아니라 VARCHAR(50)이라 서버가 새 값을 보낼 수 있다.
     // 화면이 비는 것보다 낯선 식별자라도 보이는 편이 낫다.
