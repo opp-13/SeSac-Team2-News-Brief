@@ -12,6 +12,7 @@
 """
 
 import logging
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -27,11 +28,40 @@ from app.modules.feed.routers.tag_router import my_tag_router, tag_router
 logging.basicConfig(level=logging.INFO)
 
 settings = get_settings()
+logger = logging.getLogger(__name__)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """배치 스케줄러 기동/종료.
+
+    **기본은 꺼져 있다** (`SCHEDULER_ENABLED=false`). 켜져 있으면 앱을 띄우는 것만으로
+    보관 배치가 돌고, 보관 배치는 되돌릴 수 없는 삭제를 한다 — 개발 중에 uvicorn을
+    띄웠다가 데이터가 사라지는 일이 없도록 명시적으로 켜야만 동작하게 했다.
+
+    스케줄러는 여기서만 붙인다. 배치 함수 자체는 실행기에 의존하지 않으므로
+    (CLAUDE.md §2) 다른 실행기로 갈아타면 batch/scheduler.py만 교체된다.
+    """
+    if not settings.scheduler_enabled:
+        logger.info("스케줄러 비활성 (SCHEDULER_ENABLED=false) — 배치는 수동 실행만 가능하다")
+        yield
+        return
+
+    from app.batch.scheduler import build_scheduler
+
+    scheduler = build_scheduler()
+    scheduler.start()
+    logger.info("스케줄러 기동 — 슬롯 %s", settings.batch_slots)
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+
 
 app = FastAPI(
     title=settings.app_name,
     version=settings.api_version,
     debug=settings.debug,
+    lifespan=lifespan,
 )
 
 # CORS는 프런트를 다른 오리진(예: Vite 5173)에서 띄울 때만 필요하다. nginx로 같은

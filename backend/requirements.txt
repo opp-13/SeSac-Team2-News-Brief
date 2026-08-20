@@ -20,6 +20,11 @@ cryptography==50.0.0            # MySQL 8의 caching_sha2_password 인증에 PyM
 
 redis==8.1.0                    # 동기 클라이언트 (core/redis.py 주석 참고)
 
+# 배치 스케줄러. CLAUDE.md §8 "배치 실행 기술 선정"은 아직 미결이라, 이 선택은
+# 잠정이다 — batch/scheduler.py 만 교체하면 다른 실행기로 갈아탈 수 있게 해 뒀다.
+APScheduler==3.11.0
+httpx==0.28.1                   # A+B 파이프라인 HTTP 트리거 (batch/scheduler.py)
+
 passlib[bcrypt]==1.7.4          # 비밀번호 해시 (auth/services/password.py)
 # bcrypt 5.0은 passlib 1.7.4와 호환되지 않는다. passlib이 백엔드 자체 검사에서 72바이트를
 # 넘는 문자열을 넣는데 5.0이 이를 잘라내지 않고 ValueError를 던진다
