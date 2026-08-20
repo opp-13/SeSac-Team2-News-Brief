@@ -186,3 +186,72 @@ def test_malformed_cursor_is_rejected(db, seed):
 
     with pytest.raises(BadRequestError):
         feed_service.list_feed(db, user_id=None, limit=10, cursor="!!not-a-cursor!!")
+
+
+def test_guest_list_shows_translation_over_original(db, seed):
+    """번역이 있으면 원문 요약 대신 번역을 노출한다.
+
+    이 서비스의 핵심이 번역 요약 제공이다(CLAUDE.md §1). 이전에는 게스트 경로가
+    "선호 언어를 모른다"는 이유로 translations를 조회조차 하지 않아, 영어 기사는
+    영어 요약이 그대로 나갔다.
+    """
+    rows, _, _ = feed_service.list_feed(db, user_id=None, limit=10)
+    row = next(r for r in rows if r.article.id == seed["article"].id)
+
+    # conftest: 요약은 "원문 언어 요약 3줄", ko 번역은 "번역된 요약 3줄"
+    assert row.summary_text == "번역된 요약 3줄"
+    assert row.language == "ko"
+
+
+def test_guest_list_falls_back_to_original_when_no_translation(db, seed):
+    """번역이 없으면 원문 요약을 쓴다 — 조회 시점에 번역을 만들지 않는다."""
+    from app.modules.feed.models.read_only import Translation
+
+    db.query(Translation).delete()
+    db.flush()
+
+    rows, _, _ = feed_service.list_feed(db, user_id=None, limit=10)
+    row = next(r for r in rows if r.article.id == seed["article"].id)
+
+    assert row.summary_text == "원문 언어 요약 3줄"
+
+
+def test_guest_list_ignores_failed_translation(db, seed):
+    """실패한 번역은 본문이 오류 문구라 노출하지 않는다."""
+    from app.modules.feed.models.read_only import Translation
+
+    t = db.query(Translation).first()
+    t.status = "FAILED"
+    db.flush()
+
+    rows, _, _ = feed_service.list_feed(db, user_id=None, limit=10)
+    row = next(r for r in rows if r.article.id == seed["article"].id)
+
+    assert row.summary_text == "원문 언어 요약 3줄"
+
+
+def test_user_without_tags_gets_their_preferred_language(db, seed):
+    """관심 태그가 없는 로그인 사용자는 목록만 게스트와 같고, 언어는 본인 설정을 따른다."""
+    from app.modules.feed.models.read_only import Summary, Translation
+
+    other = seed["other"]
+    other.preferred_language = "en"
+    summary = db.query(Summary).first()
+    db.add(
+        Translation(
+            summary_id=summary.id,
+            target_language="en",
+            translated_content="English summary",
+            provider="google",
+            model_name="translate_v2",
+            status="DONE",
+            created_at=summary.created_at,
+        )
+    )
+    db.flush()
+
+    rows, _, _ = feed_service.list_feed(db, user_id=other.id, limit=10)
+    row = next(r for r in rows if r.article.id == seed["article"].id)
+
+    assert row.summary_text == "English summary"
+    assert row.language == "en"

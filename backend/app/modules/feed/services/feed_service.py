@@ -17,6 +17,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.common.exceptions import NotFoundError
+from app.modules.auth.models.user import User  # 같은 담당(C) 소유 모듈이므로 참조 허용
 from app.modules.feed.models.feed_item import FeedItem
 from app.modules.feed.models.read_only import (
     FEED_READY_STATUSES,
@@ -31,6 +32,16 @@ from app.modules.feed.services import cursor as cursor_codec
 
 # [PROV-F15] 목록에 노출할 기본 요약 타입. "요약 3종 저장 여부"가 미결이므로 상수로 분리해 둔다.
 LIST_SUMMARY_TYPE = "THREE_LINE"
+
+# 서비스 기본 노출 언어. 로그인하지 않아 선호 언어를 모를 때 쓴다.
+#
+# "게스트는 선호 언어가 없으니 원문 그대로"가 아니다 — 이 서비스는 한국어 사용자를 위한
+# 뉴스 요약·번역 서비스라(CLAUDE.md §1) 기본 언어가 한국어인 것이 자명하다. 영어 기사의
+# 영어 요약을 그대로 보여주면 번역이라는 핵심 기능이 화면에 드러나지 않는다.
+DEFAULT_DISPLAY_LANGUAGE = "ko"
+
+# translations.status — 실패한 번역은 본문이 오류 문구라 노출하지 않는다.
+TRANSLATION_DONE = "DONE"
 
 
 
@@ -204,15 +215,36 @@ def list_feed(
     # feed_items만 읽으면 빈 화면이 된다. 계약에 명시돼 있다
     # (docs/api-contracts/feed.md "관심 태그가 하나도 없는 로그인 사용자").
     # 이때 응답의 feedItemId는 null이 되고 isRead는 생략된다 — 게스트와 같은 형태다.
+    #
+    # 목록만 게스트와 같을 뿐 **로그인 사용자이므로 선호 언어는 안다.** 기본 언어가 아니라
+    # 그 사용자의 preferred_language로 번역을 고른다.
     if not db.scalar(select(UserTag.id).where(UserTag.user_id == user_id).limit(1)):
-        return _list_guest(db, limit=limit, cursor=cursor, tag_id=tag_id, q=q)
+        language = db.scalar(select(User.preferred_language).where(User.id == user_id))
+        return _list_guest(
+            db,
+            limit=limit,
+            cursor=cursor,
+            tag_id=tag_id,
+            q=q,
+            language=language or DEFAULT_DISPLAY_LANGUAGE,
+        )
 
     return _list_personal(db, user_id=user_id, limit=limit, cursor=cursor, tag_id=tag_id, q=q)
 
 
 def _list_guest(
-    db: Session, *, limit: int, cursor: str | None, tag_id: int | None, q: str | None
+    db: Session,
+    *,
+    limit: int,
+    cursor: str | None,
+    tag_id: int | None,
+    q: str | None,
+    language: str = DEFAULT_DISPLAY_LANGUAGE,
 ) -> tuple[list[FeedRow], str | None, bool]:
+    """전체 최신 목록. 저장된 번역이 있으면 번역을, 없으면 원문 요약을 노출한다.
+
+    번역을 조회 시점에 만들지 않는다 — 없으면 원문을 쓴다 (CLAUDE.md §1).
+    """
     stmt = (
         select(Article)
         # 요약이 끝난 기사만 노출한다(조회 시점 생성 금지 — CLAUDE.md §1).
@@ -236,7 +268,6 @@ def _list_guest(
     articles = articles[:limit]
     article_ids = [a.id for a in articles]
 
-    # 게스트는 선호 언어가 없으므로 번역을 거치지 않고 원문 언어 요약을 그대로 쓴다.
     summaries = {
         s.article_id: s
         for s in db.scalars(
@@ -246,15 +277,35 @@ def _list_guest(
             )
         )
     }
+    # 노출 언어 번역을 한 번에 읽는다. 원문이 이미 그 언어면 번역 행이 없고 원문을 쓴다.
+    # 실패한 번역(status='FAILED')은 본문이 오류 문구라 노출하면 안 된다.
+    translations = {
+        t.summary_id: t
+        for t in db.scalars(
+            select(Translation).where(
+                Translation.summary_id.in_([s.id for s in summaries.values()] or [0]),
+                Translation.target_language == language,
+                Translation.status == TRANSLATION_DONE,
+            )
+        )
+    }
     tags_by_article = _load_article_tags(db, article_ids)
     press_by_source = _load_press_names(db, [a.source_id for a in articles])
 
-    result = [
-        FeedRow(
+    def _row(article: Article) -> FeedRow:
+        summary = summaries.get(article.id)
+        translation = translations.get(summary.id) if summary else None
+        if translation is not None:
+            text, row_language = translation.translated_content, translation.target_language
+        elif summary is not None:
+            text, row_language = summary.content, summary.language
+        else:
+            text, row_language = None, article.language
+        return FeedRow(
             article=article,
-            language=article.language,
-            summary_text=summaries[article.id].content if article.id in summaries else None,
-            summary_type=LIST_SUMMARY_TYPE if article.id in summaries else None,
+            language=row_language,
+            summary_text=text,
+            summary_type=LIST_SUMMARY_TYPE if summary is not None else None,
             press=press_by_source.get(article.source_id) if article.source_id else None,
             feed_item=None,
             # 게스트 행에는 태그 칩을 표시하지 않는다(design_plan §7) — 이름은 비우고
@@ -262,8 +313,8 @@ def _list_guest(
             tag_names=[],
             category=_pick_category(tags_by_article.get(article.id, [])),
         )
-        for article in articles
-    ]
+
+    result = [_row(article) for article in articles]
     next_cursor = (
         cursor_codec.encode(result[-1].article.published_at, result[-1].article.id)
         if result and has_next

@@ -144,10 +144,20 @@ design_plan.md §6.1: "**요약문은 목록에 넣지 않습니다.** 행을 �
 `summary`를 빼면 모달이 `GET /articles/{id}`로 따로 받아와야 한다 —
 **어차피 직접 URL 진입(`/articles/1`)을 지원해야 하므로 그 엔드포인트는 필수다**(아래).
 
+> **현재 구현은 목록 응답에 `summary`를 포함한다.** 모달이 목록 객체를 그대로 쓰고 있어
+> 빼면 상세가 비기 때문이다. 화면상으로는 디자인 의도대로 **목록 행에는 요약을 그리지 않고**
+> 모달에서만 보여준다(`ArticleModal.tsx`). 위 제안(목록에서 제거)은 `GET /articles/{id}`가
+> 붙는 시점에 함께 적용한다.
+
 ### 요약이 없는 기사 처리
 
 `articles.status`가 `SUMMARIZED`에 도달하지 않은 기사(수집만 됨 / `FAILED`)는
-**목록에서 제외**하는 것을 제안한다. 이유: 목록에는 요약이 안 보이지만 행을 누르면
+**목록에서 제외**하는 것을 제안한다.
+
+> `status`는 `COLLECTED → SUMMARIZED → TRANSLATED` 진행 단계다. 노출 대상은
+> **`SUMMARIZED` 이후 단계 전부**(`SUMMARIZED`, `TRANSLATED`)다. `TRANSLATED`는 더 진행된
+> 상태지 덜 진행된 것이 아니다 — `== 'SUMMARIZED'`로만 거르면 번역 배치가 도는 순간
+> 기사가 목록에서 통째로 사라진다. 이유: 목록에는 요약이 안 보이지만 행을 누르면
 반드시 요약이 필요하고, 그 시점에 생성하는 건 위 절대 제약 위반이다.
 
 - 게스트 모드: `WHERE articles.status = 'SUMMARIZED'` 조건 추가
@@ -208,9 +218,9 @@ GET /api/v1/articles/128402?summaryType=THREE_LINE
 
 | 필드 | 출처 |
 |---|---|
-| `summary.content` | `summaries.content` |
+| `summary.content` | 노출 언어 번역이 있으면 `translations.translated_content`, 없으면 `summaries.content` (아래 참고) |
 | `summary.summaryType` | `summaries.summary_type` — **요청한 타입과 다를 수 있다**(아래) |
-| `summary.language` | `summaries.language` |
+| `summary.language` | 실제 노출 언어. 번역이 쓰였으면 `translations.target_language`, 아니면 `summaries.language` |
 
 ### ⚠️ 요약 3종이 항상 있다고 가정하지 않는다
 
@@ -224,11 +234,38 @@ GET /api/v1/articles/128402?summaryType=THREE_LINE
 - 서버는 요청 타입이 없으면 있는 것 중 하나를 반환하고 실제 타입을 명시한다.
   **없다고 해서 그 자리에서 생성하지 않는다.**
 
-### 번역 필드는 지금 넣지 않는다
+### 번역은 별도 필드가 아니라 `content`에 담긴다
 
-`translations` 테이블과 `feed_items.translation_id`가 스키마에 있지만, 번역 UI는
-담당자 부재로 디자인 범위에서 제외됐다 (frontend/CLAUDE.md §0.2). 모달에는 요약 블록
-위에 **자리만 비워둔** 상태다. 번역이 살아날 때 이 응답에 필드를 추가한다.
+**전제가 바뀌었다.** 이 절은 원래 "번역 UI는 담당자 부재로 범위에서 제외됐으니 필드를
+넣지 않는다"였는데, 그 뒤 수집 파이프라인이 실제로 번역을 만들기 시작했다
+(Google Translate, `translations.provider='google'`).
+
+번역이 이 서비스의 핵심이므로(루트 CLAUDE.md §1 "요약·번역 개인화 피드") **원문/번역을
+두 필드로 나누지 않고 `content` 하나에 노출 언어 기준으로 담는다.**
+
+| 상황 | `content` | `language` |
+|---|---|---|
+| 노출 언어 번역이 있다 | `translations.translated_content` | 그 번역의 `target_language` |
+| 없다 | `summaries.content` | `summaries.language` |
+
+**노출 언어를 정하는 규칙:**
+
+| | 노출 언어 |
+|---|---|
+| 로그인 (개인화 피드) | `feed_items.translation_id`가 가리키는 번역의 언어 |
+| 로그인 (관심 태그 0개 → 전체 최신) | `users.preferred_language` |
+| 비로그인 (게스트) | 서비스 기본 언어 `ko` |
+
+게스트에게 원문을 그대로 주지 않는다. 선호 언어를 모른다는 이유로 영어 기사의 영어 요약을
+노출하면 번역이라는 핵심 기능이 화면에 드러나지 않는다. 한국어 사용자를 위한 서비스이므로
+기본 언어는 `ko`다.
+
+`translations.status='FAILED'`인 번역은 본문이 오류 문구라 노출하지 않고 원문으로 떨어진다.
+
+**번역이 없다고 그 자리에서 만들지 않는다** (CLAUDE.md §1). 원문 요약으로 대체할 뿐이다.
+
+> 원문/번역 토글은 아직 없다. 필요해지면 응답에 원문을 함께 내리는 형태로 계약을 넓힌다 —
+> 디자인에 없는 요소라 디자인 담당 승인이 먼저다.
 
 ### 응답 — 오류
 
