@@ -1,0 +1,6 @@
+# 개발/테스트 의존성. 운영 이미지에는 넣지 않는다.
+-r requirements.txt
+
+pytest==9.1.1
+httpx==0.28.1       # FastAPI TestClient가 요구한다
+ruff==0.16.3        # newscollect와 같은 린터 (.github/workflows/lint.yml 참고)

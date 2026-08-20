@@ -1,0 +1,31 @@
+# 백엔드는 배포 가능한 패키지가 아니라 애플리케이션이므로 빌드 메타데이터를 두지 않는다.
+# 의존성은 requirements.txt가 기준이고(C의 docs/FILE_PLACEMENT_C.md 절차와 일치),
+# 이 파일은 도구 설정만 담는다.
+#
+# [후속] .github/workflows/lint.yml 이 현재 newscollect/** 만 린트한다. backend/** 를
+# 필터에 추가하는 작업은 공용 파일 변경이라 별도 PR + 전원 리뷰가 필요하다.
+
+[tool.ruff]
+# 120으로 두면 `ruff format --check`와 E501이 현재 코드에서 모두 깨끗하다.
+# 100으로 내리면 긴 한국어 주석 10곳이 E501에 걸린다(포매터는 주석을 쪼개지 못한다).
+# 첫날부터 전부 실패하는 린트 설정은 결국 무시되므로, 현 코드가 통과하는 선에서 시작한다.
+line-length = 120
+target-version = "py311"
+extend-exclude = ["app/db/migrations", ".venv"]
+
+[tool.ruff.lint]
+# 실제 버그를 잡는 규칙부터 켠다. 타입 주석 강제(ANN)와 미사용 인자(ARG)는
+# 기존 코드 30여 곳이 걸려서 넣지 않았다 — 각 모듈 담당이 준비되면 추가한다.
+select = ["E", "F", "I", "B", "SIM", "UP"]
+ignore = [
+    # FastAPI에서 Depends()를 기본 인자로 쓰는 것은 정상 패턴이다.
+    "B008",
+    # `timezone.utc` → `datetime.UTC` 권고. 기존 코드가 timezone.utc를 쓰고 있고
+    # 동작상 차이가 없어 강제하지 않는다.
+    "UP017",
+]
+
+[tool.pytest.ini_options]
+# `cd backend && pytest` 로 app 패키지가 임포트되도록 루트를 고정한다
+pythonpath = ["."]
+testpaths = ["app"]

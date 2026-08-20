@@ -1,0 +1,29 @@
+# 백엔드 런타임 의존성 (공용 파일 — 한 줄 추가도 자주 겹친다. 추가한 PR은 rebase 후
+# 즉시 머지한다: CLAUDE.md §5 규칙 7)
+#
+# Python 3.11 이상이 필요하다. 코드 전반이 `str | None`(PEP 604) 문법을 쓴다.
+# 검증 환경은 3.13.9다. newscollect CI가 3.14를 쓰므로 백엔드도 3.13/3.14로 맞추면 단순하다.
+#
+# 버전은 실제 설치·기동·테스트가 확인된 값으로 고정했다.
+
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+
+pydantic==2.13.4
+pydantic-settings==2.15.0
+email-validator==2.3.0          # Pydantic EmailStr (auth/schemas/auth.py)
+
+SQLAlchemy==2.0.52
+alembic==1.19.1
+PyMySQL==1.2.0
+cryptography==50.0.0            # MySQL 8의 caching_sha2_password 인증에 PyMySQL이 필요로 한다
+
+redis==8.1.0                    # 동기 클라이언트 (core/redis.py 주석 참고)
+
+passlib[bcrypt]==1.7.4          # 비밀번호 해시 (auth/services/password.py)
+# bcrypt 5.0은 passlib 1.7.4와 호환되지 않는다. passlib이 백엔드 자체 검사에서 72바이트를
+# 넘는 문자열을 넣는데 5.0이 이를 잘라내지 않고 ValueError를 던진다
+# ("password cannot be longer than 72 bytes"). 4.3.0에서는 hash/verify가 정상 동작한다.
+# passlib은 2020년 이후 릴리스가 없으므로, 중기적으로 bcrypt 직접 사용이나 pwdlib으로
+# 옮기는 편이 낫다 — auth 담당(C)과 합의 후 별도 PR.
+bcrypt==4.3.0
