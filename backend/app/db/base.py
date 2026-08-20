@@ -4,7 +4,7 @@
 `models.py`를 만들지 않는다 (CLAUDE.md §7).
 
 주의: `Base.metadata.create_all()`은 테스트(SQLite in-memory)에서만 쓴다. 운영 스키마의
-기준은 `docs/db/schema.sql`이고 변경은 Alembic + C 창구를 거친다 (§5 규칙 6).
+기준은 `docs/db/schema.sql`이고 변경은 Alembic + C 창구를 거친다 (§5 규칙 5).
 """
 
 from sqlalchemy import BigInteger, Integer

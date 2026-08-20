@@ -4,9 +4,9 @@
 모듈의 `models/`가 아니라 공용에 둔다 — 모듈별로 각자 정의하면 같은 테이블에 서로 다른
 매핑이 생긴다.
 
-[SCHEMA-CHECK] 컬럼은 `docs/db/schema.sql` V1.1 기준이다. ENUM 값을 코드에 문자열로
-쓰되 SQLAlchemy Enum 타입으로 박지 않았다 — 스키마 V2 제안(`docs/db/schema-v2-proposal.md`)이
-검토 중이라 값이 바뀔 수 있고, 마이그레이션은 C 창구를 거쳐야 한다 (§5 규칙 6).
+컬럼은 `docs/db/schema.sql` V2 기준이다. ENUM 값은 코드에 문자열로 쓰되 SQLAlchemy Enum
+타입으로 박지 않는다 — ENUM 값이 바뀔 때 모델과 마이그레이션 양쪽을 고쳐야 하는 결합을
+피한다. 마이그레이션은 C 창구를 거친다 (§5 규칙 5).
 """
 
 from datetime import datetime
@@ -40,8 +40,14 @@ class JobLog(Base):
     __tablename__ = "job_logs"
 
     id: Mapped[int] = mapped_column(BigIntType, primary_key=True, autoincrement=True)
-    job_id: Mapped[int] = mapped_column(BigIntType, ForeignKey("batch_jobs.id"), nullable=False)
-    article_id: Mapped[int | None] = mapped_column(BigIntType, nullable=True)
+    job_id: Mapped[int] = mapped_column(
+        BigIntType, ForeignKey("batch_jobs.id", ondelete="CASCADE"), nullable=False
+    )
+    # V2가 articles 파티셔닝을 제거하면서 FK 대상이 될 수 있게 됐다. 기사가 지워지면
+    # 로그 행은 남기고 참조만 끊는다 — 오류 이력 자체가 사라지면 원인 추적이 안 된다.
+    article_id: Mapped[int | None] = mapped_column(
+        BigIntType, ForeignKey("articles.id", ondelete="SET NULL"), nullable=True
+    )
     # ENUM('INFO','WARN','ERROR')
     level: Mapped[str] = mapped_column(String(10), nullable=False, default="INFO")
     error_code: Mapped[str | None] = mapped_column(String(50), nullable=True)
