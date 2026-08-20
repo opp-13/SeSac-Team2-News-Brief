@@ -1,22 +1,31 @@
-import { useQuery } from '@tanstack/react-query'
-import { mockRetentionPolicies } from '../mocks/retentionMockData'
-import type { RetentionPolicy } from '../types/admin'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  fetchRetentionPolicies,
+  updateRetentionPolicy,
+  type RetentionPolicy,
+} from '../api/admin'
 
-// frontend/CLAUDE.md §2 규칙2·3: 컴포넌트가 목업 상수를 직접 들고 있는 대신 TanStack
-// Query 뒤로 옮긴다 (hooks/useFeed.ts, usePipelineRuns.ts, useLLMUsage.ts와 같은 패턴).
-// TODO(§9 작업순서 이후 단계): docs/api-contracts/admin.md가 아직 없다. 계약 확정 후
-// api/admin.ts + MSW 핸들러(조회)와 정책 수정을 위한 별도 mutation 엔드포인트로 교체한다.
-// "수정 저장"은 실제로 서버에 반영되지 않는 로컬 전용 동작이라 이 훅은 조회만 담당한다
-// (원본 프로토타입도 새로고침하면 편집 내용이 사라지는 동작이었다 — 그대로 유지).
-function fetchRetentionPolicies(): Promise<RetentionPolicy[]> {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(mockRetentionPolicies), 700)
-  })
-}
+const QUERY_KEY = ['admin', 'retention-policies']
 
 export function useRetentionPolicies() {
-  return useQuery({
-    queryKey: ['admin', 'retention-policies'],
-    queryFn: fetchRetentionPolicies,
+  return useQuery({ queryKey: QUERY_KEY, queryFn: fetchRetentionPolicies })
+}
+
+/**
+ * 정책 수정.
+ *
+ * 이전에는 "수정 → 저장"이 로컬 state만 바꿔서 새로고침하면 초기화됐다. 이제 서버에
+ * 반영되고, 성공 시 목록 캐시를 그 응답으로 갱신한다 — 서버가 실제로 저장한 값과
+ * 화면이 어긋나지 않게 하기 위해 입력값이 아니라 응답을 쓴다.
+ */
+export function useUpdateRetentionPolicy() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: updateRetentionPolicy,
+    onSuccess: (updated) => {
+      queryClient.setQueryData<RetentionPolicy[]>(QUERY_KEY, (prev) =>
+        prev?.map((p) => (p.id === updated.id ? updated : p)),
+      )
+    },
   })
 }

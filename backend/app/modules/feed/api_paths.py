@@ -29,3 +29,8 @@ DEFAULT_PAGE_SIZE = 20  # [PROV-F05] limit 기본값; 허용 범위 1-50
 # feed_router.py가 Query(le=...)에서 이 상수를 참조하는데 정의가 빠져 있어
 # 모듈 임포트 자체가 AttributeError로 실패했다. 위 주석의 "허용 범위 1-50"에 맞춘 값이다.
 MAX_PAGE_SIZE = 50
+
+# --- 관리자: 데이터 보관 정책 (docs/api-contracts/admin.md) ---
+ADMIN_RETENTION_PREFIX = f"{API_PREFIX}/admin/retention"
+ADMIN_RETENTION_LIST = ""                       # GET   ADMIN_RETENTION_PREFIX
+ADMIN_RETENTION_UPDATE = "/{target_entity}"     # PATCH ADMIN_RETENTION_PREFIX/{targetEntity}

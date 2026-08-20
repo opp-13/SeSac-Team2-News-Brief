@@ -21,6 +21,7 @@ from app.common.response import EnvelopeMiddleware, register_exception_handlers
 from app.core.config import get_settings
 from app.modules.auth.routers.auth_router import router as auth_router
 from app.modules.feed.routers.feed_router import router as feed_router
+from app.modules.feed.routers.retention_router import retention_router
 from app.modules.feed.routers.tag_router import my_tag_router, tag_router
 
 logging.basicConfig(level=logging.INFO)
@@ -62,6 +63,7 @@ app.include_router(auth_router)
 app.include_router(feed_router)
 app.include_router(tag_router)
 app.include_router(my_tag_router)
+app.include_router(retention_router)
 
 
 @app.get("/health", include_in_schema=False)

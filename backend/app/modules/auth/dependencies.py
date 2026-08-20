@@ -6,7 +6,7 @@
 
 from fastapi import Depends, Request
 
-from app.common.exceptions import UnauthorizedError
+from app.common.exceptions import ForbiddenError, UnauthorizedError
 from app.core.redis import get_redis  # 공용 — 수정하지 않음
 from app.db.session import get_db  # 공용 — 수정하지 않음
 from app.modules.auth import api_paths
@@ -65,3 +65,15 @@ def get_current_user_optional(
     if session is None:
         return None
     return auth_service.get_user_by_id(db, session.user_id)
+
+
+def get_current_admin(user: User = Depends(get_current_user)) -> User:
+    """관리자 전용 엔드포인트 가드.
+
+    로그인 여부는 `get_current_user`가 이미 확인한다. 여기서는 권한만 본다 —
+    401(로그인 안 함)과 403(로그인했지만 권한 없음)을 구분해야 프런트가
+    "로그인 화면으로 보낼지 / 권한 없음을 보여줄지"를 정할 수 있다.
+    """
+    if user.role != "ADMIN":
+        raise ForbiddenError("ADMIN_REQUIRED")
+    return user

@@ -1,6 +1,10 @@
 import { useState } from 'react'
-import { useRetentionPolicies } from '../../hooks/useRetentionPolicies'
-import type { RetentionPolicy } from '../../types/admin'
+import {
+  useRetentionPolicies,
+  useUpdateRetentionPolicy,
+} from '../../hooks/useRetentionPolicies'
+import type { RetentionPolicy } from '../../api/admin'
+import { errorMessage } from '../../utils/apiError'
 import { colors, typeScale, radius } from '../../constants/theme'
 
 // docs/figma-export/pages/admin/RetentionPage.tsx 이식.
@@ -9,11 +13,12 @@ import { colors, typeScale, radius } from '../../constants/theme'
 // (TanStack Query, §2 규칙2·3), named export → default export, 하드코딩 색상 →
 // theme.ts 토큰(정확히 일치하는 것만 — 나머지는 원본 값 그대로 손대지 않음, CLAUDE.md §10).
 //
-// "수정/저장"은 원본도 서버에 반영하지 않는 로컬 전용 동작이라(새로고침하면 초기화)
-// 그 구조를 그대로 유지한다 — 조회 결과(policies)를 로컬 편집용 state로 한 번만 복사해
-// 두고, 이후 편집은 이 로컬 state에서만 일어난다. 편집 중에 백그라운드 재검증이 와도
-// 사용자가 고치던 값을 덮어쓰지 않도록 "최초 한 번만 시드"하는 패턴을 쓴다(useEffect
-// 대신 렌더 중 상태 조정 — NewsFeedPage의 prevActiveFilter와 같은 이유).
+// 편집은 로컬 state에서 하고 "저장"을 누를 때 서버에 PATCH한다. 조회 결과를 로컬
+// 편집용 state로 한 번만 복사해 두는 이유는, 편집 중에 백그라운드 재검증이 와도
+// 사용자가 고치던 값을 덮어쓰지 않게 하기 위해서다(useEffect 대신 렌더 중 상태 조정 —
+// NewsFeedPage의 prevActiveFilter와 같은 이유).
+//
+// 원본 프로토타입은 저장이 로컬 전용이라 새로고침하면 초기화됐다. 이제 실제로 반영된다.
 //
 // §4 "상태 화면 4종": 로딩/오류/비어있음 구현. "끝 도달"은 스크롤 페이지네이션이 없어
 // (정책 목록은 고정된 소수 항목) 해당 없다.
@@ -24,6 +29,13 @@ export default function RetentionPage() {
   const [hasSeeded, setHasSeeded] = useState(false)
   const [editId, setEditId] = useState<string | null>(null)
   const [saved, setSaved] = useState<string | null>(null)
+  const updateMutation = useUpdateRetentionPolicy()
+  // 저장 실패를 화면에 알린다. 보관 기간은 되돌릴 수 없는 삭제를 예고하는 값이라
+  // "저장된 줄 알았는데 아니었다"가 특히 위험하다.
+  const saveError = errorMessage(
+    updateMutation.error,
+    '저장에 실패했습니다. 네트워크 상태를 확인해주세요.',
+  )
 
   // 최초 조회가 끝난 시점에 딱 한 번만 로컬 편집용 state로 복사한다. 이후 백그라운드
   // 재검증이 다시 성공해도(예: 실제 API로 교체된 뒤) 사용자가 편집 중인 값을
@@ -39,8 +51,17 @@ export default function RetentionPage() {
   }
 
   const save = (id: string) => {
-    setEditId(null)
-    setSaved(id)
+    const policy = policies.find((p) => p.id === id)
+    if (!policy) return
+    updateMutation.mutate(
+      { targetEntity: id, retentionDays: policy.retentionDays, isActive: policy.autoDelete },
+      {
+        onSuccess: () => {
+          setEditId(null)
+          setSaved(id)
+        },
+      },
+    )
   }
 
   return (
@@ -75,6 +96,15 @@ export default function RetentionPage() {
                       <h2 className="text-slate-900 font-semibold" style={{ fontSize: 15 }}>
                         {policy.name}
                       </h2>
+                      {saveError && editId === policy.id && (
+                        <span
+                          role="alert"
+                          className="ml-2 text-[13px]"
+                          style={{ color: colors.status.error.text }}
+                        >
+                          {saveError}
+                        </span>
+                      )}
                       {saved === policy.id && (
                         <span style={{ fontSize: 12, color: colors.status.success.text }}>저장됨</span>
                       )}
@@ -167,7 +197,7 @@ export default function RetentionPage() {
                       마지막 실행
                     </p>
                     <p className="text-slate-700" style={{ fontSize: 14, fontVariantNumeric: 'tabular-nums' }}>
-                      {policy.lastRun}
+                      {policy.lastRun ? policy.lastRun.slice(0, 10) : '—'}
                     </p>
                   </div>
                 </div>
