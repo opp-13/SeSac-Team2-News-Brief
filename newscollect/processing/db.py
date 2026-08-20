@@ -66,12 +66,32 @@ def _lookup_source_id(cursor, provider: str) -> int | None:
     return row[0]
 
 
+def _category_slug(category: str) -> str:
+    """providers/base.py의 CATEGORIES 값을 tags.slug 형태로 정규화한다.
+
+    Free News API의 topic은 공백을 포함한다("internet security") -- slug는 하이픈이다.
+    """
+    return category.strip().lower().replace(" ", "-")
+
+
 def _lookup_tag_id(cursor, category: str) -> int | None:
-    # name으로 매칭한다 -- slug는 실제 값 체계가 아직 안 정해져서 여기서 참조하지 않는다.
-    cursor.execute("SELECT id FROM tags WHERE tag_type = 'CATEGORY' AND name = %s", (category,))
+    """카테고리를 slug로 매칭한다.
+
+    name이 아니라 slug로 찾는 이유: name은 화면에 보이는 표시명이라 한국어이고 바뀔 수도
+    있다. slug는 변하지 않는 기계 키라, 표시명을 바꿔도 기사-태그 연결이 끊기지 않는다.
+    태그 어휘는 backend의 Alembic 리비전 0002_seed_tags가 소유한다.
+
+    is_active는 보지 않는다 -- 비활성 태그는 "화면에 안 보인다"는 뜻이지
+    "태깅하지 않는다"가 아니다. 데이터는 쌓아 두고 노출만 고른다.
+    """
+    slug = _category_slug(category)
+    cursor.execute("SELECT id FROM tags WHERE tag_type = 'CATEGORY' AND slug = %s", (slug,))
     row = cursor.fetchone()
     if row is None:
-        print(f"[db] tags에 name='{category}' 없음 (seed_mock.sql 적용 확인)", file=sys.stderr)
+        print(
+            f"[db] tags에 slug='{slug}' 없음 (alembic upgrade head 적용 확인)",
+            file=sys.stderr,
+        )
         return None
     return row[0]
 

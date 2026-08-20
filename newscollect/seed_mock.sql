@@ -1,6 +1,11 @@
--- 임시 목업 시드: newscollect 파이프라인을 실제 news_sources/tags 데이터 없이도
--- 돌려볼 수 있게 하는 최소 데이터. 정식 news_sources/tags 데이터가 들어오면 이 파일은
--- 지워도 된다 (docs/shared/schema-v2-proposal/docs/db/schema_no_index.sql 기준).
+-- 임시 목업 시드: newscollect 파이프라인을 실제 news_sources 데이터 없이도 돌려볼 수
+-- 있게 하는 최소 데이터.
+--
+-- [tags 부분은 이제 필요 없다] 정식 태그 어휘는 backend의 Alembic 리비전
+-- 0002_seed_tags가 소유한다 (slug = 기계 키, name = 한국어 표시명).
+-- `alembic upgrade head`를 돌렸다면 아래 tags INSERT는 INSERT IGNORE라 전부 건너뛴다.
+-- db.py의 _lookup_tag_id()도 name이 아니라 slug로 매칭하도록 바뀌었다.
+-- news_sources 부분만 계속 쓰인다.
 
 USE news_ai;
 
