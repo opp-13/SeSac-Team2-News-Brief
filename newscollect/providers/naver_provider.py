@@ -13,7 +13,10 @@ class NaverProvider(NewsProvider):
     def __init__(self):
         self._client = NaverNewsClient()
 
-    def search_by_category(self, category: str, display: int = 10) -> list[ArticleItem]:
+    def search_by_category(
+        self, category: str, display: int = 10, language: str = "ko"
+    ) -> list[ArticleItem]:
+        # 참고로 language는 무시됨
         result = self._client.search(query=category, display=display, sort="date")
         return [
             ArticleItem(
