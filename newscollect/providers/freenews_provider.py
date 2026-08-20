@@ -27,6 +27,7 @@ class FreeNewsProvider(NewsProvider):
                 source=article.get("publisher") or "freenews",
                 provider="freenews",
                 detail_ref=article["uuid"],
+                language=language,
             )
             for article in articles
         ]

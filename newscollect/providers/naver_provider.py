@@ -27,6 +27,7 @@ class NaverProvider(NewsProvider):
                 source="naver",
                 provider="naver",
                 detail_ref=item.link,
+                language="ko",
             )
             for item in result.items
         ]
