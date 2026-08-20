@@ -7,8 +7,12 @@ here, so the pipeline shape stays visible instead of hiding inside a class.
 import argparse
 import sys
 
+from dotenv import load_dotenv
+
 import details
 from providers import CATEGORIES, PROVIDER_NAMES, get_provider
+
+load_dotenv()
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +65,19 @@ def detail_stage(items: list) -> list:
     return items
 
 
+def summarize_stage(items: list, summarize_and_translate) -> list:
+    """Summarize each item in its own actual language (item.language).
+
+    Doesn't call summarize_and_translate.summarize_stage() directly -- that
+    picks a language per item.provider (freenews == always "eng"), which is
+    wrong now that freenews can be searched in Korean too via --language.
+    """
+    for item in items:
+        lang = "kor" if item.language == "ko" else "eng"
+        summarize_and_translate.summarize_item(item, lang)
+    return items
+
+
 def output_stage(items: list) -> None:
     """Print every item, merged and sorted by published_at, regardless of provider."""
     items = sorted(items, key=lambda i: i.published_at, reverse=True)
@@ -81,20 +98,23 @@ def main() -> int:
 
     items = search_stage(args.category, args.display, providers, language=args.language)
 
-    ## TODO:  db mock 제거
-
-    # --help와 같은 동작에서는 필요 x
-    from dedup import dedup_stage
+    # Import lib for data processing [Lazy Load]
+    from processing import summarize_and_translate
+    from processing.cosine_similarity import dedup_stage
+    from processing.db import persist_stage
+    from processing.translate import translate_stage
 
     items = dedup_stage(items, tag=args.category)
 
     if args.with_body:
         items = detail_stage(items)
 
+    summarize_stage(items, summarize_and_translate)
+    translate_stage(items)
+    items = persist_stage(items, category=args.category)
+
     ## 디버깅용
     output_stage(items)
-
-    ## TODO: AI 요약 및 번역 모듈 또는 호출 API 추가
 
     return 0
 
