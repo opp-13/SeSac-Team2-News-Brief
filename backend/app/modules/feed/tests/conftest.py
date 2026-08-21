@@ -116,10 +116,12 @@ def seed(db):
 
     # 저장된 번역. 피드는 번역이 있으면 번역을 우선 노출하므로, 요약 본문과 다른 문자열을
     # 넣어야 "어느 쪽이 쓰였는지"를 테스트가 실제로 구분할 수 있다.
+    # 제목도 같은 이유로 articles.title("AI 반도체 시장 확대")과 다른 값을 쓴다 —
+    # 같은 값이면 번역 제목이 쓰였는지 원문 제목이 쓰였는지 구분할 수 없다.
     translation = Translation(
         summary_id=summary.id,
         target_language="ko",
-        translated_title="AI 반도체 시장 확대",
+        translated_title="번역된 제목: AI 반도체",
         translated_content="번역된 요약 3줄",
         provider="anthropic",
         model_name="claude-sonnet-5",

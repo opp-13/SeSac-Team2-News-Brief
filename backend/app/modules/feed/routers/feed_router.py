@@ -38,7 +38,7 @@ def list_feed(
             FeedItemResponse(
                 feed_item_id=r.feed_item.id if r.feed_item else None,
                 article_id=r.article.id,
-                title=r.article.title,
+                title=r.title,
                 press=r.press,
                 published_at=r.article.published_at,
                 language=r.language,
@@ -65,7 +65,7 @@ def get_feed_detail(
     return FeedDetailResponse(
         feed_item_id=row.feed_item.id,
         article_id=row.article.id,
-        title=row.article.title,
+        title=row.title,
         press=row.press,
         published_at=row.article.published_at,
         language=row.language,

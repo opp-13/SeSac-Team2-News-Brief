@@ -53,7 +53,10 @@ class FeedRow:
     language: str
     summary_text: str | None
     summary_type: str | None
-    #
+    # 화면에 띄울 제목. 저장된 번역 제목이 있으면 그것, 없으면 원문 제목이다.
+    # articles.title을 그대로 쓰지 않는 이유는 요약과 같다 — 영문 기사에
+    # 한국어 요약이 붙고 제목만 영어로 남으면 한 행 안에서 언어가 갈린다.
+    title: str
 
     press: str | None = None
     feed_item: FeedItem | None = None
@@ -64,12 +67,15 @@ class FeedRow:
 
 def _resolve_summary_text(
     db: Session, summary_id: int | None, translation_id: int | None
-) -> tuple[str | None, str | None, str | None]:
-    """저장된 번역 > 저장된 요약 순으로 사용. 없으면 (None, None, None) — 생성하지 않는다.
+) -> tuple[str | None, str | None, str | None, Translation | None]:
+    """저장된 번역 > 저장된 요약 순으로 사용. 없으면 전부 None — 생성하지 않는다.
 
-    반환값은 (본문, 요약 종류, 노출 언어)다. 노출 언어를 feed_items 컬럼으로 따로 두지 않고
-    여기서 결정한다 — 번역이 있으면 그 번역의 target_language가 곧 노출 언어다.
-    같은 정보를 두 곳에 두면 어긋난다.
+    반환값은 (본문, 요약 종류, 노출 언어, 번역 행)이다. 노출 언어를 feed_items 컬럼으로
+    따로 두지 않고 여기서 결정한다 — 번역이 있으면 그 번역의 target_language가 곧
+    노출 언어다. 같은 정보를 두 곳에 두면 어긋난다.
+
+    번역 행 자체를 돌려주는 것은 호출 측이 제목까지 같은 행에서 꺼내 쓰기 위해서다
+    (`_display_title`). 본문과 제목이 서로 다른 번역에서 오면 안 된다.
     """
     if translation_id is not None:
         translation = db.get(Translation, translation_id)
@@ -79,12 +85,24 @@ def _resolve_summary_text(
                 translation.translated_content,
                 summary.summary_type if summary else None,
                 translation.target_language,
+                translation,
             )
     if summary_id is not None:
         summary = db.get(Summary, summary_id)
         if summary is not None:
-            return summary.content, summary.summary_type, summary.language
-    return None, None, None
+            return summary.content, summary.summary_type, summary.language, None
+    return None, None, None, None
+
+
+def _display_title(article: Article, translation: Translation | None) -> str:
+    """번역된 제목이 있으면 그것, 없으면 원문 제목.
+
+    번역 행이 있어도 translated_title이 NULL일 수 있다 — 제목 번역이 붙기 전에
+    저장된 행이 그렇다. 그 경우 원문 제목으로 떨어진다(빈 제목을 내보내지 않는다).
+    """
+    if translation is not None and translation.translated_title:
+        return translation.translated_title
+    return article.title
 
 
 def _resolve_tag_id(db: Session, tag_name: str | None) -> int | None:
@@ -304,6 +322,7 @@ def _list_guest(
         return FeedRow(
             article=article,
             language=row_language,
+            title=_display_title(article, translation),
             summary_text=text,
             summary_type=LIST_SUMMARY_TYPE if summary is not None else None,
             press=press_by_source.get(article.source_id) if article.source_id else None,
@@ -370,7 +389,7 @@ def _list_personal(
 
     result: list[FeedRow] = []
     for feed_item, article in rows:
-        text, stype, language = _resolve_summary_text(
+        text, stype, language, translation = _resolve_summary_text(
             db, feed_item.summary_id, feed_item.translation_id
         )
         article_tags = tags_by_article.get(article.id, [])
@@ -379,6 +398,7 @@ def _list_personal(
                 feed_item=feed_item,
                 article=article,
                 language=language or article.language,
+                title=_display_title(article, translation),
                 summary_text=text,
                 summary_type=stype,
                 press=press_by_source.get(article.source_id) if article.source_id else None,
@@ -414,7 +434,7 @@ def get_feed_detail(
         for s in db.scalars(select(Summary).where(Summary.article_id == article.id))
     }
     # 노출 언어는 feed_item이 가리키는 번역에서 온다. 그 언어의 번역만 골라 쓴다.
-    _, _, language = _resolve_summary_text(db, feed_item.summary_id, feed_item.translation_id)
+    _, _, language, _ = _resolve_summary_text(db, feed_item.summary_id, feed_item.translation_id)
     language = language or article.language
     translations = {
         t.summary_id: t
@@ -434,10 +454,14 @@ def get_feed_detail(
         return t.translated_content if t is not None else s.content
 
     press_by_source = _load_press_names(db, [article.source_id])
+    list_summary = summaries.get(LIST_SUMMARY_TYPE)
     row = FeedRow(
         feed_item=feed_item,
         article=article,
         language=language,
+        # 목록과 같은 요약(THREE_LINE)의 번역에서 제목을 꺼낸다 — 상세와 목록의
+        # 제목이 서로 달라 보이지 않게.
+        title=_display_title(article, translations.get(list_summary.id) if list_summary else None),
         summary_text=pick(LIST_SUMMARY_TYPE),
         summary_type=LIST_SUMMARY_TYPE,
         press=press_by_source.get(article.source_id) if article.source_id else None,

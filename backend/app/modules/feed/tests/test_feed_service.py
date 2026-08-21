@@ -255,3 +255,49 @@ def test_user_without_tags_gets_their_preferred_language(db, seed):
 
     assert row.summary_text == "English summary"
     assert row.language == "en"
+
+
+def test_list_feed_shows_translated_title(db, seed):
+    """번역 제목이 있으면 원문 제목 대신 그것을 노출한다 (로그인 경로).
+
+    요약만 번역하고 제목을 원문으로 두면 한 행 안에서 언어가 갈린다. 수집기가
+    translations.translated_title을 채우기 시작했으므로 조회도 그 값을 쓴다.
+    """
+    _make_feed_item(db, seed)
+
+    rows, _, _ = feed_service.list_feed(db, user_id=seed["user"].id, limit=10)
+
+    # conftest: articles.title은 "AI 반도체 시장 확대", 번역 제목은 따로 있다.
+    assert rows[0].title == "번역된 제목: AI 반도체"
+    assert rows[0].article.title == "AI 반도체 시장 확대"
+
+
+def test_guest_list_shows_translated_title(db, seed):
+    """게스트 목록도 같은 기준을 쓴다 — 로그인 여부로 제목 언어가 달라지지 않는다."""
+    rows, _, _ = feed_service.list_feed(db, user_id=None, limit=10)
+    row = next(r for r in rows if r.article.id == seed["article"].id)
+
+    assert row.title == "번역된 제목: AI 반도체"
+
+
+def test_title_falls_back_to_original_when_translation_has_no_title(db, seed):
+    """번역 행은 있으나 translated_title이 NULL이면 원문 제목으로 떨어진다.
+
+    제목 번역이 붙기 전에 저장된 행이 이 상태다. 빈 제목을 내보내면 안 된다.
+    """
+    seed["translation"].translated_title = None
+    db.flush()
+    _make_feed_item(db, seed)
+
+    rows, _, _ = feed_service.list_feed(db, user_id=seed["user"].id, limit=10)
+
+    assert rows[0].title == "AI 반도체 시장 확대"
+
+
+def test_detail_shows_translated_title(db, seed):
+    """상세도 목록과 같은 제목을 쓴다 — 목록에서 누른 제목이 상세에서 바뀌면 안 된다."""
+    item = _make_feed_item(db, seed)
+
+    row, _ = feed_service.get_feed_detail(db, user_id=seed["user"].id, feed_item_id=item.id)
+
+    assert row.title == "번역된 제목: AI 반도체"
