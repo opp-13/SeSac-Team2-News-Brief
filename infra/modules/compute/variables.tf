@@ -64,6 +64,12 @@ variable "create_bastion" {
   default     = false
 }
 
+variable "create_deploy" {
+  description = "Whether modules/deploy (CodeDeploy pipeline) exists -- gates whether frontend/backend instances get the CodeDeploy agent's IAM instance profile and Role tag. Should match env/dev's var.create_deploy passed into both modules; pointless to attach these without the deployment groups they're meant to serve."
+  type        = bool
+  default     = true
+}
+
 variable "key_pair_name" {
   description = "Name of an existing EC2 key pair (created in the AWS console) to use for SSH access to the instances"
   type        = string

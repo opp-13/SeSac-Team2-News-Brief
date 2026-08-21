@@ -1,5 +1,8 @@
 locals {
   ami = coalesce(var.ami, data.aws_ami.al2023.id)
+  # null when create_deploy = false -- no CodeDeploy pipeline exists to serve, so
+  # nothing should attach the agent's instance profile either.
+  codedeploy_instance_profile_name = var.create_deploy ? aws_iam_instance_profile.codedeploy_instance[0].name : null
 }
 
 # ---------------------------------------------------------------------------
@@ -20,7 +23,11 @@ module "frontend" {
   vpc_security_group_ids      = [var.web_security_group_id]
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
+  iam_instance_profile        = local.codedeploy_instance_profile_name
+  user_data                   = file("${path.module}/scripts/install_web.sh")
   user_data_replace_on_change = true
+  # Role tag consumed by modules/deploy's ec2_tag_filter (frontend_role_tag_value) -- keep in sync.
+  tags = var.create_deploy ? { Role = "frontend" } : {}
 
   root_block_device = {
     size = var.root_volume_size
@@ -46,7 +53,11 @@ module "backend" {
   vpc_security_group_ids      = [var.internal_api_security_group_id]
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
+  iam_instance_profile        = local.codedeploy_instance_profile_name
+  user_data                   = file("${path.module}/scripts/install_was.sh")
   user_data_replace_on_change = true
+  # Role tag consumed by modules/deploy's ec2_tag_filter (backend_role_tag_value) -- keep in sync.
+  tags = var.create_deploy ? { Role = "backend" } : {}
 
   root_block_device = {
     size = var.root_volume_size
@@ -71,6 +82,7 @@ module "db" {
   vpc_security_group_ids      = [var.internal_mysql_security_group_id]
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
+  user_data                   = file("${path.module}/scripts/install_mysql.sh")
   user_data_replace_on_change = true
 
   root_block_device = {
@@ -96,6 +108,7 @@ module "redis" {
   vpc_security_group_ids      = [var.internal_redis_security_group_id]
   key_name                    = var.key_pair_name
   associate_public_ip_address = false
+  user_data                   = file("${path.module}/scripts/install_redis.sh")
   user_data_replace_on_change = true
 
   root_block_device = {
@@ -122,6 +135,7 @@ module "bastion" {
   vpc_security_group_ids      = [var.bastion_security_group_id]
   key_name                    = var.key_pair_name
   associate_public_ip_address = true
+  user_data                   = file("${path.module}/scripts/install_bastion.sh")
   user_data_replace_on_change = true
 
   root_block_device = {
