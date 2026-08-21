@@ -225,6 +225,18 @@ module "internal_api_sg" {
       referenced_security_group_id = module.web_sg.id
       description                  = "API from web server"
     }
+    # The internal NLB's health-check probes come from its own ENIs in the
+    # backend subnets, not from web_sg -- the SG-scoped `api` rule above
+    # doesn't cover them, which left every target permanently "unhealthy"
+    # even with a working app. Same VPC-CIDR pattern as internal_mysql_sg /
+    # internal_redis_sg below.
+    api_healthcheck = {
+      from_port   = 8000
+      to_port     = 8000
+      ip_protocol = "tcp"
+      cidr_ipv4   = var.vpc_cidr
+      description = "API from within the VPC (covers NLB health checks)"
+    }
   }
 
   egress_rules = {
