@@ -9,7 +9,28 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.filter.outputs.frontend }}
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            frontend:
+              - 'frontend/**'
+              - 'deploy/frontend/**'
+            backend:
+              - 'backend/**'
+              - 'deploy/backend/**'
+
   deploy-frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     strategy:
       # One AWS account per environment (each teammate has their own). Add a
       # name here once its GitHub Environment + secrets/vars are set up --
@@ -55,6 +76,8 @@ jobs:
             --s3-location bucket=${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }},key=frontend/${{ github.sha }}.zip,bundleType=zip
 
   deploy-backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     strategy:
       matrix:
         environment: [john]
