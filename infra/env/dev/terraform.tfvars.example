@@ -26,12 +26,19 @@ bastion_ssh_cidr    = "REPLACEME"
 ## aws에 등록된 키페어 넣으면 됩니다.
 key_pair_name = "REPLACEME"
 
-# optional 인자
+# optional 인자 #
 
 create_bastion = false
+
+# OIDC 있을 경우 import문 먼저 삽입
+#  terraform import 'module.deploy[0].aws_iam_openid_connect_provider.github' arn:aws:iam::{내id}:oidc-provider/token.actions.githubusercontent.com
 create_deploy  = false
+
+# route53 (db.team2.local, api.team2.local, redis.team2.local)
 enable_private_dns = false
 
 # 무조건 acm_certificate_domain에 등록된 인자를 넣으세요. (경우에 따라 루트도메인이 아닐 수 있음)
 enable_https = false
 acm_certificate_domain = "REPLACEME"
+
+# 참고로 route53에 alb a레코드는 따로 등록하셔야 됩니다.
