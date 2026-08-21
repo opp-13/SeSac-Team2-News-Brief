@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { usePipelineRuns } from '../../hooks/usePipelineRuns'
-import type { PipelineRun, PipelineStage } from '../../types/admin'
+import { usePipelineRuns, useRunLogs } from '../../hooks/usePipelineRuns'
+import type { PipelineRun, PipelineStage, RunStatus } from '../../api/admin'
 import { colors, typeScale, radius } from '../../constants/theme'
-import { providerLabel } from '../../utils/provider'
+import { toRelativeTime } from '../../utils/date'
 
 // docs/figma-export/pages/admin/PipelinePage.tsx 이식.
 //
@@ -23,61 +23,86 @@ import { providerLabel } from '../../utils/provider'
 // §4 "상태 화면 4종": 로딩/비어있음/오류는 구현. "끝 도달"은 이 화면에 스크롤 페이지네이션이
 // 없어(관리자 이력 테이블, design_plan §7에도 무한 스크롤 언급 없음) 해당 없다.
 
-const STATUS_LABELS: Record<PipelineRun['status'], string> = {
-  success: '성공',
-  partial: '부분 실패',
-  failure: '실패',
-  pending: '대기',
+// 상태 값은 스키마 ENUM(대문자)을 그대로 쓴다 — 계약 §1 확정. 프로토타입은 소문자에
+// `failure`(스키마는 `FAILED`)를 썼는데, 그대로 두면 같은 개념의 이름이 둘이 된다.
+// run과 stage가 같은 ENUM을 쓰므로 라벨·색도 하나만 둔다.
+const STATUS_LABELS: Record<RunStatus, string> = {
+  SUCCESS: '성공',
+  PARTIAL: '부분 실패',
+  FAILED: '실패',
+  PENDING: '대기',
+  RUNNING: '실행 중',
 }
 
-function statusStyle(status: PipelineRun['status']) {
+// 단계 이름은 batch_jobs.job_type ENUM이다. 프로토타입의 5단계(뉴스 수집 / 중복 제거 /
+// LLM 요약 / 태그 분류 / DB 저장) 중 뒤 셋은 ENUM에 없는 하위 작업이라, 유지하려면
+// 서버가 없는 개념을 지어내야 한다 (계약 §1 "열려있는 질문" 2번 확정).
+const JOB_TYPE_LABELS: Record<string, string> = {
+  COLLECT: '뉴스 수집',
+  SUMMARIZE: 'LLM 요약',
+  TRANSLATE: '번역',
+  FEED: '피드 큐레이션',
+  RETENTION: '데이터 보관',
+}
+
+function statusStyle(status: RunStatus) {
   switch (status) {
-    case 'success':
+    case 'SUCCESS':
       return colors.status.success
-    case 'partial':
+    case 'PARTIAL':
       return colors.status.partial
-    case 'failure':
+    case 'FAILED':
       return colors.status.error
-    case 'pending':
+    case 'RUNNING':
+      return { bg: colors.accentTint, text: colors.accent }
+    case 'PENDING':
       return colors.status.pending
   }
 }
 
-const STAGE_ICONS: Record<PipelineStage['status'], string> = {
-  success: '✓',
-  failure: '✗',
-  running: '◐',
-  pending: '○',
-  skipped: '—',
+const STAGE_ICONS: Record<RunStatus, string> = {
+  SUCCESS: '✓',
+  FAILED: '✗',
+  PARTIAL: '!',
+  RUNNING: '◐',
+  PENDING: '○',
 }
 
-function stageColor(status: PipelineStage['status']) {
+function stageColor(status: RunStatus) {
   switch (status) {
-    case 'success':
+    case 'SUCCESS':
       return colors.status.success.text
-    case 'failure':
+    case 'FAILED':
       return colors.status.error.text
-    case 'running':
+    case 'PARTIAL':
+      return colors.status.partial.text
+    case 'RUNNING':
       return colors.accent
-    case 'pending':
+    case 'PENDING':
       return colors.muted
-    case 'skipped':
-      return colors.border
   }
 }
 
-function stageBg(status: PipelineStage['status']) {
+function stageBg(status: RunStatus) {
   switch (status) {
-    case 'success':
+    case 'SUCCESS':
       return colors.status.success.bg
-    case 'failure':
+    case 'FAILED':
       return colors.status.error.bg
-    case 'pending':
-    case 'skipped':
+    case 'PARTIAL':
+      return colors.status.partial.bg
+    case 'PENDING':
       return colors.status.pending.bg
-    case 'running':
+    case 'RUNNING':
       return colors.accentTint
   }
+}
+
+/** 단계 소요 시간(초). 서버는 시각만 주고 계산은 프런트가 한다 (계약 §1). */
+function stageDuration(stage: PipelineStage): number | null {
+  if (!stage.startedAt || !stage.finishedAt) return null
+  const ms = new Date(stage.finishedAt).getTime() - new Date(stage.startedAt).getTime()
+  return ms >= 0 ? Math.round(ms / 1000) : null
 }
 
 export default function PipelinePage() {
@@ -160,7 +185,7 @@ export default function PipelinePage() {
                         {run.id}
                       </p>
                       <p className="text-slate-500" style={{ fontSize: 12 }}>
-                        {run.relativeTime}
+                        {run.executedAt ? toRelativeTime(run.executedAt) : '실행 전'}
                       </p>
                     </td>
                     <td className="px-5 py-4">
@@ -208,10 +233,12 @@ export default function PipelinePage() {
 function StageBar({ stages }: { stages: PipelineStage[] }) {
   return (
     <div className="flex items-center gap-1">
-      {stages.map((stage) => (
+      {stages.map((stage, i) => (
         <div
-          key={stage.name}
-          title={`${stage.name}: ${stage.status}`}
+          // job_type은 한 실행에 두 번 나올 수 있다(수집 배치를 카테고리별로 여러 번
+          // 돌리면 COLLECT 행이 여러 개다). key에 순번을 함께 넣는다.
+          key={`${stage.jobType}-${i}`}
+          title={`${JOB_TYPE_LABELS[stage.jobType] ?? stage.jobType}: ${STATUS_LABELS[stage.status]}`}
           className="flex items-center justify-center w-5 h-5 rounded text-xs font-medium"
           style={{
             background: stageBg(stage.status),
@@ -274,7 +301,7 @@ function SideDrawer({ run, onClose }: { run: PipelineRun; onClose: () => void })
               {STATUS_LABELS[run.status]}
             </span>
             <span className="text-slate-500" style={{ fontSize: 13 }}>
-              {run.relativeTime}
+              {run.executedAt ? toRelativeTime(run.executedAt) : '실행 전'}
             </span>
           </div>
 
@@ -283,7 +310,7 @@ function SideDrawer({ run, onClose }: { run: PipelineRun; onClose: () => void })
             {[
               { label: '처리 건수', value: run.processedCount.toLocaleString() },
               { label: '오류 건수', value: run.errorCount.toLocaleString() },
-              { label: '프로바이더', value: providerLabel(run.provider) },
+              { label: '슬롯', value: run.slot },
             ].map((s) => (
               <div key={s.label} className="bg-slate-50 rounded-lg p-3">
                 <p className="text-slate-500 mb-1" style={{ fontSize: 12 }}>
@@ -305,66 +332,112 @@ function SideDrawer({ run, onClose }: { run: PipelineRun; onClose: () => void })
               단계별 상태
             </h3>
             <div className="space-y-2">
-              {run.stages.map((stage) => (
-                <div
-                  key={stage.name}
-                  className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200"
-                >
-                  <div className="flex items-center gap-2">
-                    <span style={{ color: stageColor(stage.status), fontSize: 14 }}>
-                      {STAGE_ICONS[stage.status]}
-                    </span>
-                    <span className="text-slate-700" style={{ fontSize: 14 }}>
-                      {stage.name}
-                    </span>
-                  </div>
-                  <div className="text-right">
-                    {stage.count !== undefined && (
+              {run.stages.map((stage, i) => {
+                const duration = stageDuration(stage)
+                return (
+                  <div
+                    key={`${stage.jobType}-${i}`}
+                    className="flex items-center justify-between px-4 py-3 rounded-lg border border-slate-200"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span style={{ color: stageColor(stage.status), fontSize: 14 }}>
+                        {STAGE_ICONS[stage.status]}
+                      </span>
+                      <span className="text-slate-700" style={{ fontSize: 14 }}>
+                        {JOB_TYPE_LABELS[stage.jobType] ?? stage.jobType}
+                      </span>
+                    </div>
+                    <div className="text-right">
                       <p
                         className="text-slate-900"
                         style={{ fontSize: 13, fontVariantNumeric: 'tabular-nums' }}
                       >
-                        {stage.count.toLocaleString()}건
+                        {stage.successCount.toLocaleString()}/{stage.targetCount.toLocaleString()}건
                       </p>
-                    )}
-                    {stage.duration !== undefined && (
-                      <p className="text-slate-500" style={{ fontSize: 12 }}>
-                        {stage.duration}s
-                      </p>
-                    )}
+                      {duration !== null && (
+                        <p className="text-slate-500" style={{ fontSize: 12 }}>
+                          {duration}s
+                        </p>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
 
-          {/* Error details if any */}
-          {run.errorCount > 0 && (
-            <div>
-              <h3 className="text-slate-900 font-semibold mb-3" style={{ fontSize: 14 }}>
-                오류 내용
-              </h3>
-              <div
-                className="rounded-lg border p-4"
-                // #FDE047(yellow-300)는 대응 토큰이 없어 리터럴 유지 — colors.status.partial.bg와
-                // 같은 yellow 계열의 진한 버전
-                style={{ background: colors.status.partial.bg, borderColor: '#FDE047' }}
-              >
-                <p
-                  className="font-medium mb-1"
-                  style={{ fontSize: 13, color: colors.status.partial.text }}
-                >
-                  LLM 요약 단계에서 {run.errorCount}건 처리 실패
-                </p>
-                <p style={{ fontSize: 12, color: colors.status.partial.text }}>
-                  응답 시간 초과(timeout) 오류. Rate limit 초과로 인한 재시도 실패.
-                </p>
-              </div>
-            </div>
-          )}
+          {/* 오류·경고 로그 — job_logs 실제 내용 */}
+          <RunLogs runId={run.id} />
         </div>
       </div>
     </>
+  )
+}
+
+/**
+ * 실행 1건의 로그. 드로어가 열릴 때만 조회한다.
+ *
+ * 이전에는 여기에 "응답 시간 초과(timeout) 오류..." 문구가 **하드코딩**돼 있어, 어떤
+ * 실행을 열어도 같은 문장이 나왔다. `job_logs`에 실제 기록이 쌓이고 있으므로 그것을 쓴다.
+ *
+ * INFO는 빼고 WARN/ERROR만 보여준다 — 배치가 매 실행 요약 JSON을 INFO로 남기는데,
+ * 그건 "오류 내용" 자리에 놓일 성격이 아니다.
+ */
+function RunLogs({ runId }: { runId: string }) {
+  const { data: logs = [], isLoading, isError } = useRunLogs(runId)
+  const notable = logs.filter((l) => l.level === 'ERROR' || l.level === 'WARN')
+
+  if (isLoading) {
+    return <div className="h-16 rounded-lg bg-slate-100 animate-pulse" />
+  }
+  if (isError) {
+    return (
+      <p className="text-slate-500" style={{ fontSize: 13 }}>
+        로그를 불러오지 못했습니다
+      </p>
+    )
+  }
+  if (notable.length === 0) {
+    return (
+      <div>
+        <h3 className="text-slate-900 font-semibold mb-3" style={{ fontSize: 14 }}>
+          오류 내용
+        </h3>
+        <p className="text-slate-500" style={{ fontSize: 13 }}>
+          기록된 오류·경고가 없습니다
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <div>
+      <h3 className="text-slate-900 font-semibold mb-3" style={{ fontSize: 14 }}>
+        오류 내용 ({notable.length})
+      </h3>
+      <div className="space-y-2">
+        {notable.map((log) => {
+          const tone = log.level === 'ERROR' ? colors.status.error : colors.status.partial
+          return (
+            <div
+              key={log.id}
+              className="rounded-lg border p-4"
+              style={{ background: tone.bg, borderColor: tone.bg }}
+            >
+              <p className="font-medium mb-1" style={{ fontSize: 13, color: tone.text }}>
+                [{JOB_TYPE_LABELS[log.jobType] ?? log.jobType}] {log.errorCode ?? log.level}
+                {log.retryCount > 0 && ` · 재시도 ${log.retryCount}회`}
+              </p>
+              {log.message && (
+                <p style={{ fontSize: 12, color: tone.text, wordBreak: 'break-word' }}>
+                  {log.message}
+                </p>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
   )
 }
 

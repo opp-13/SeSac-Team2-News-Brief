@@ -1,17 +1,20 @@
 # Admin API 계약
 
-> **상태: DRAFT — 승인 대기. 이 문서만 담당이 3명으로 갈린다.**
+> **상태: 파이프라인·보관 정책 확정 (구현 완료). 담당은 C로 통합됐다.**
 > 루트 CLAUDE.md §3: "관리자 대시보드가 쓰는 집계 API는 A(파이프라인 현황)와 B(비용/사용량)가
 > 각각 제공한다. D는 화면만 담당하되 필요한 응답 형태를 계약으로 먼저 요청한다."
 >
 > | 섹션 | 제공 담당 |
 > |---|---|
-> | `/admin/pipeline/*` | **A** (collector — 파이프라인 처리 현황 집계) — 미구현, 프론트는 목업 |
+> | `/admin/pipeline/*` | **C** (feed) — ✅ 구현 완료, 프론트 연결됨 |
 > | ~~`/admin/llm-usage`~~ | 스코프 제외 (§8-17). 화면·테이블 모두 제거됨 |
 > | `/admin/retention` | **C** (feed) — ✅ 구현 완료, 프론트 연결됨 |
 >
-> 관리자 화면은 이제 2개다(파이프라인 / 보관 정책). 보관 정책은 실제 API를 쓰고,
-> 파이프라인만 아직 `usePipelineRuns`가 목업 배열을 직접 쓴다.
+> 관리자 화면은 2개다(파이프라인 / 보관 정책). 둘 다 실제 API를 쓴다.
+>
+> 파이프라인은 원래 A 담당이었으나 C가 가져왔다 — `batch_jobs`/`job_logs`에 실제로
+> 쓰는 쪽이 C의 배치들이고, 관리자 API도 이미 `/admin/retention`을 C가 갖고 있어서
+> 같은 자리에 두는 편이 어긋날 여지가 적다.
 >
 > 관련 문서: [auth.md](auth.md), [feed.md](feed.md), [meta.md](meta.md)
 
@@ -35,7 +38,7 @@
 
 ---
 
-# 1. 파이프라인 (담당: A)
+# 1. 파이프라인 (담당: C)
 
 화면: `/admin/pipeline` — 배치 실행 목록 + 오류 상세 사이드 드로어(폭 480px)
 
@@ -61,7 +64,8 @@ run id는 `20260819-0700` 처럼 날짜+slot으로 합성한다.
 **(b) 부모 run 테이블 추가 — 스키마 변경 필요**
 정확하지만 루트 CLAUDE.md §5 규칙6에 따라 **C 창구를 거쳐야** 하고 마이그레이션이 필요하다.
 
-→ **(a)를 제안한다.** 아래 응답 예시는 (a) 기준이다.
+→ **(a)로 확정했다.** 구현: `services/pipeline_service.py`.
+run id는 저장하지 않고 매번 계산한다 — 같은 정보를 두 곳에 두면 어긋난다.
 
 또한 프로토타입의 단계 이름 5개 중 **`중복 제거`·`태그 분류`·`DB 저장`은 `job_type` ENUM에
 없다.** 이 셋은 `COLLECT`/`FEED` 내부의 하위 작업이다. 단계 목록을 `job_type` 기준(최대 5개:
@@ -104,8 +108,7 @@ GET /api/v1/admin/pipeline/runs?cursor=...&limit=20
             "startedAt": "2026-08-19T03:00:00Z",
             "finishedAt": "2026-08-19T03:00:42Z"
           }
-        ],
-        "models": ["claude-sonnet-5"]
+        ]
       }
     ],
     "nextCursor": null,
@@ -122,45 +125,64 @@ GET /api/v1/admin/pipeline/runs?cursor=...&limit=20
 | `slot` | `batch_jobs.slot` | |
 | `status` | 하위 job들의 `batch_jobs.status` 집계 | 집계 규칙 아래 |
 | `executedAt` | 하위 job 중 최소 `started_at` | ISO UTC |
-| `processedCount` | 하위 job `success_count` 집계 | 어떻게 집계할지 아래 질문 참고 |
+| `processedCount` | 하위 job `success_count` **최댓값** | 아래 참고 |
 | `errorCount` | 하위 job `fail_count` 합 | |
 | `stages[].jobType` | `batch_jobs.job_type` | |
 | `stages[].status` | `batch_jobs.status` | |
 | `stages[].targetCount` / `successCount` / `failCount` | 동명 컬럼 | |
 | `stages[].startedAt` / `finishedAt` | 동명 컬럼 | 소요시간은 프론트가 계산 |
-| `models` | `ai_invocations.model_name` DISTINCT (해당 job) | 아래 참고 |
-| `providers` | `ai_invocations.provider` DISTINCT (해당 job) | 스키마 V2에서 추가된 컬럼 |
 
-### status 값의 대소문자 — 결정 필요
+### status 값의 대소문자 — 확정: 스키마 ENUM(대문자)
 
 스키마는 `'SUCCESS' | 'PARTIAL' | 'FAILED' | 'PENDING' | 'RUNNING'`(대문자),
 프론트 프로토타입은 `'success' | 'partial' | 'failure' | 'pending'`(소문자, 게다가
 `FAILED`가 아니라 `failure`)를 쓴다.
 
-→ **스키마 ENUM 값을 그대로 쓰는 것을 제안한다** (진실 공급원을 둘로 만들지 않기 위해).
-채택 시 프론트 매핑 수정 필요(D). `RUNNING`은 프로토타입에 없으니 프론트에 추가해야 한다.
+→ **스키마 ENUM 값을 그대로 쓴다** (진실 공급원을 둘로 만들지 않기 위해).
+프론트 타입을 `'SUCCESS' | 'PARTIAL' | 'FAILED' | 'PENDING' | 'RUNNING'`으로 맞췄고
+`RUNNING`도 추가했다. 단계 상태는 별도 ENUM이 아니라 같은 값을 쓴다.
 
-### run 단위 status 집계 규칙 — 결정 필요
+### run 단위 status 집계 규칙 — 확정
 
-하위 job 상태들로 run 상태를 정하는 규칙을 명시해야 한다. 제안:
+위에서부터 먼저 맞는 규칙을 쓴다 (`pipeline_service.aggregate_status`):
 
 | 조건 | run status |
 |---|---|
 | 모든 job `SUCCESS` | `SUCCESS` |
 | 하나라도 `RUNNING` | `RUNNING` |
 | 모든 job `PENDING` | `PENDING` |
-| 일부 실패했으나 일부 성공 / `PARTIAL` 존재 | `PARTIAL` |
-| 핵심 단계(COLLECT) 실패로 후속이 모두 건너뜀 | `FAILED` |
+| 성공한 단계가 하나도 없음 | `FAILED` |
+| 그 외 (일부 성공 + 일부 실패) | `PARTIAL` |
 
-### `provider` / `model` 이 `batch_jobs`에 없다
+마지막 두 줄이 계약 초안의 "핵심 단계 실패로 후속이 모두 건너뜀"을 대신한다 —
+"COLLECT가 핵심"이라는 판단을 서버가 갖는 대신 **성공이 하나라도 있었는가**로
+정한다. job_type이 늘어나도 규칙을 고칠 필요가 없다.
 
-프로토타입 타입은 run마다 `provider: string`, `model: string`을 갖는다. 스키마에는
-`batch_jobs`에 모델 정보가 없고, `ai_invocations` / `summaries`에만 있다.
+### `provider` / `model` 은 응답에 없다 — 제거됨
 
-→ 위 예시처럼 `models: string[]` / `providers: string[]`(해당 run의 `ai_invocations`
-DISTINCT)로 바꾸는 것을 제안한다. 한 배치에서 모델이 하나만 쓰인다는 보장이 없으므로
-배열이 안전하다. 스키마 V2가 `model_id`를 `provider` + `model_name`으로 분리했으므로
-서버가 접두사로 파생할 필요 없이 두 컬럼을 그대로 DISTINCT 하면 된다.
+프로토타입 타입은 run마다 `provider` / `model`을 갖고 있었고, 계약 초안은 이 값을
+`ai_invocations`에서 DISTINCT 하기로 했다. **그 테이블은 §8-17로 삭제됐다**(프로바이더를
+Groq 하나로 고정하면서 비용 추적을 스코프에서 뺐다). 남은 출처가 없다.
+
+대안도 검토했지만 쓰지 않는다:
+
+- `articles.collect_job_id`로 job↔기사를 잇는 길은 스키마에 있으나 수집기가 그 컬럼을
+  채우지 않아 전부 NULL이다 (A 작업 필요).
+- `summaries.created_at`이 job 실행 시각 범위에 들어가는지로 추정하는 방법은 배치가
+  겹치면 틀린 값을 준다. 모니터링 화면이 틀린 값을 보여주느니 안 보여주는 게 낫다.
+
+→ **응답에서 뺐다.** 프론트도 드로어의 '프로바이더' 항목을 제거했다. 필요해지면
+`articles.collect_job_id`를 채우는 쪽이 정확하므로 그때 A와 함께 되살린다.
+
+### `processedCount`는 단계 성공 건수의 **최댓값**이다
+
+합이 아니다. 수집기가 `COLLECT` / `SUMMARIZE` / `TRANSLATE`를 각각 남기는데 **셋 다 같은
+기사를 세므로**, 합하면 기사 4건을 처리한 실행이 "처리 12건"으로 보인다. 한 실행이 다룬
+기사 수는 가장 많이 처리한 단계의 수다 — 뒤 단계는 앞 단계 결과에서 줄어들 뿐 늘지 않는다.
+
+이 값이 뜻을 가지려면 **모든 단계가 같은 단위(기사 수)를 세야 한다.** 그래서 수집 래퍼
+(`app/batch/collect.py`)는 `success_count`를 건드리지 않는다 — 예전에는 거기에 카테고리
+수를 넣어서 단위가 섞였다. 카테고리 단위 결과는 `job_logs` INFO에 남는다.
 
 ## GET /admin/pipeline/runs/{runId}/logs — 오류 상세
 
@@ -373,11 +395,11 @@ PATCH /api/v1/admin/retention/ARTICLES
 
 | # | 질문 | 담당 |
 |---|---|---|
-| 1 | run 모델 (a) slot+날짜 집계 vs (b) 부모 테이블 추가 | A (+C if 스키마) |
-| 2 | 단계 이름을 `job_type` 기준으로 바꿀지, 프로토타입 5단계를 유지할지 | A · D |
-| 3 | status 값 대소문자 — 스키마 ENUM 그대로 쓸지 | A · D |
-| 4 | run 단위 status 집계 규칙 | A |
-| 5 | `processedCount` 집계 방식 (단계별 success_count를 어떻게 하나로 합칠지) | A |
+| ~~1~~ | ~~run 모델 (a) slot+날짜 집계 vs (b) 부모 테이블 추가~~ → **확정.** (a). 스키마 변경 없이 `slot` ENUM과 "하루 3회 배치" 요구사항이 그대로 대응된다 | ~~C~~ |
+| ~~2~~ | ~~단계 이름을 `job_type` 기준으로 바꿀지~~ → **확정.** `job_type` 기준. 프로토타입의 `중복 제거`·`태그 분류`·`DB 저장`은 ENUM에 없는 하위 작업이라, 유지하려면 서버가 없는 개념을 지어내야 한다 | ~~C · D~~ |
+| ~~3~~ | ~~status 값 대소문자~~ → **확정.** 스키마 ENUM(대문자) 그대로. 프론트 타입에 `RUNNING` 추가 | ~~C · D~~ |
+| ~~4~~ | ~~run 단위 status 집계 규칙~~ → **확정.** RUNNING > 전부 PENDING > 전부 SUCCESS > 성공 0건이면 FAILED > 그 외 PARTIAL | ~~C~~ |
+| ~~5~~ | ~~`processedCount` 집계 방식~~ → **확정.** 단계 `success_count`의 최댓값. 모든 단계가 기사 수를 세도록 통일했다(수집 래퍼는 카테고리 수를 더 이상 넣지 않는다) | ~~C~~ |
 | ~~6~~ | ~~멀티 프로바이더로 갈지, Bedrock 단일로 갈지~~ → **해소.** 스키마 V2가 멀티 프로바이더로 확정 (`provider` + `model_name`) | ~~B · 디자인~~ |
 | ~~7~~ | ~~"추정" 플래그 근거 — 컬럼 추가 vs 서버 규칙~~ → **해소.** `ai_invocations.is_token_estimated` 추가 | ~~B (+C if 스키마)~~ |
 | ~~8~~ | ~~`ai_invocations`를 보관 정책 대상 ENUM에 추가할지~~ → **해소.** `target_entity`에 `INVOCATIONS` 추가 | ~~C~~ |
@@ -385,4 +407,5 @@ PATCH /api/v1/admin/retention/ARTICLES
 | 10 | 보관 기간 축소 시 확인 절차 | C · 디자인 |
 | 11 | 집계 기간의 시간대 기준 (KST vs UTC) — 일별 차트 경계가 달라진다 | A · B |
 | ~~12~~ | ~~`ARTICLES` 보관 정책이 soft purge인지 hard delete인지~~ → **해소.** hard delete로 확정 (CLAUDE.md §8-14). 다만 요약·번역이 함께 삭제되므로 축소 확인 절차(10번)와 묶어서 봐야 한다 | ~~C · 디자인~~ |
-| 13 | `is_fallback` / `TIMEOUT` · `RATE_LIMITED` 를 화면에 노출할지 | D |
+| ~~13~~ | ~~`is_fallback` / `TIMEOUT` · `RATE_LIMITED` 를 화면에 노출할지~~ → **소멸.** `ai_invocations` 제거(§8-17)로 근거 컬럼이 없어졌다 | ~~D~~ |
+| ~~14~~ | ~~수집기·요약/번역이 `batch_jobs`에 단계 행을 남기지 않는다~~ → **해소.** `newscollect/processing/batch_log.py`가 COLLECT/SUMMARIZE/TRANSLATE를 `{stage}:{slot}:{날짜}` 하나의 행에 누적하고, 실패 사유를 해당 단계의 `job_logs`에 남긴다 | ~~A · B~~ |

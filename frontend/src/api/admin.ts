@@ -71,3 +71,76 @@ export function updateRetentionPolicy(input: RetentionPolicyUpdate): Promise<Ret
     body: JSON.stringify(body),
   }).then(toPolicy)
 }
+
+// ─────────────────────────────────────────────────────────
+// 배치 실행 이력 (docs/api-contracts/admin.md §1)
+//
+// 이 타입들은 `types/admin.ts`에 있었는데 그 파일은 피그마 프로토타입 기준이라
+// 실제 응답과 어긋나 있었다(소문자 status, 서버가 만들지 않는 `relativeTime`,
+// 삭제된 `ai_invocations`에서 오던 `provider`/`model`). 계약 확정본에 맞춰 이리로
+// 옮기면서 정리했고, 남은 export가 없어 그 파일은 삭제했다.
+// ─────────────────────────────────────────────────────────
+
+/**
+ * 상태 값은 스키마 ENUM(대문자)을 그대로 쓴다. 프로토타입이 쓰던 소문자
+ * (`'success' | 'failure'`)로 바꾸면 진실 공급원이 둘이 된다 — 계약 §1 확정 사항.
+ */
+export type RunStatus = 'SUCCESS' | 'PARTIAL' | 'FAILED' | 'PENDING' | 'RUNNING'
+
+export interface PipelineStage {
+  jobType: string
+  status: RunStatus
+  targetCount: number
+  successCount: number
+  failCount: number
+  startedAt: string | null
+  finishedAt: string | null
+}
+
+export interface PipelineRun {
+  /** `20260821-0700` — 날짜+slot 합성. 서버가 저장하지 않고 매번 계산한다. */
+  id: string
+  slot: string
+  status: RunStatus
+  executedAt: string | null
+  /**
+   * 단계 success_count의 **합**이라 같은 기사가 여러 단계를 지나면 중복 집계된다.
+   * 배치마다 success_count의 단위가 다른 것도 아직 정리되지 않았다
+   * (계약 §1 "열려있는 질문" 5번 — A·B·C 합의 대기).
+   */
+  processedCount: number
+  errorCount: number
+  stages: PipelineStage[]
+}
+
+export interface PipelineRunPage {
+  runs: PipelineRun[]
+  nextCursor: string | null
+  hasNext: boolean
+}
+
+export function fetchPipelineRuns(cursor?: string | null, limit = 20): Promise<PipelineRunPage> {
+  const params = new URLSearchParams({ limit: String(limit) })
+  if (cursor) params.set('cursor', cursor)
+  return apiFetch<PipelineRunPage>(`/admin/pipeline/runs?${params}`)
+}
+
+export type LogLevel = 'INFO' | 'WARN' | 'ERROR'
+
+export interface JobLog {
+  /** BIGINT라 서버가 문자열로 보낸다 (JS 안전 정수 범위). */
+  id: string
+  jobType: string
+  articleId: string | null
+  level: LogLevel
+  errorCode: string | null
+  message: string | null
+  retryCount: number
+  createdAt: string
+}
+
+/** `level`을 생략하면 전체 등급을 받는다. */
+export function fetchRunLogs(runId: string, level?: LogLevel): Promise<{ logs: JobLog[] }> {
+  const qs = level ? `?level=${level}` : ''
+  return apiFetch<{ logs: JobLog[] }>(`/admin/pipeline/runs/${runId}/logs${qs}`)
+}
