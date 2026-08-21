@@ -6,6 +6,11 @@
 # ---------------------------------------------------------------------------
 resource "aws_s3_bucket" "codedeploy_artifacts" {
   bucket = "${var.name_prefix}-codedeploy-artifacts"
+
+  # This bucket accumulates a new zip per deploy, so `terraform destroy`
+  # always hits BucketNotEmpty without this -- force_destroy empties it
+  # automatically instead of requiring a manual `aws s3 rm --recursive` first.
+  force_destroy = true
 }
 
 resource "aws_s3_bucket_public_access_block" "codedeploy_artifacts" {
