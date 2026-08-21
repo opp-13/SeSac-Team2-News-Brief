@@ -52,3 +52,8 @@ output "internal_nlb_dns_name" {
   description = "Internal NLB DNS name (frontend instances call this to reach the backend)"
   value       = aws_lb.internal.dns_name
 }
+
+output "internal_nlb_zone_id" {
+  description = "Internal NLB hosted zone ID (needed for a Route53 ALIAS record pointing at it)"
+  value       = aws_lb.internal.zone_id
+}

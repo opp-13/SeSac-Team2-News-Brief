@@ -98,6 +98,12 @@ variable "create_deploy" {
   default     = true
 }
 
+variable "enable_private_dns" {
+  description = "Whether to create the team2.local Route53 private hosted zone (db/redis/api records pointing at module.compute's instances/NLB). Optional -- off by default."
+  type        = bool
+  default     = false
+}
+
 variable "acm_certificate_domain" {
   description = <<-EOT
     Domain name exactly as registered on an existing, already-ISSUED ACM

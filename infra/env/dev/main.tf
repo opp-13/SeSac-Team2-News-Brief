@@ -15,6 +15,15 @@ module "network" {
   public_subnet_cidrs = var.public_subnet_cidrs
   private_subnets     = var.private_subnets
   bastion_ssh_cidr    = var.bastion_ssh_cidr
+
+  # team2.local private hosted zone -- these come from module.compute's
+  # outputs, so this specific set of resources applies after compute (see
+  # modules/network/dns.tf for why that's not a cycle).
+  enable_private_dns    = var.enable_private_dns
+  db_private_ip         = module.compute.db_private_ip
+  redis_private_ip      = module.compute.redis_private_ip
+  internal_nlb_dns_name = module.compute.internal_nlb_dns_name
+  internal_nlb_zone_id  = module.compute.internal_nlb_zone_id
 }
 
 module "compute" {
