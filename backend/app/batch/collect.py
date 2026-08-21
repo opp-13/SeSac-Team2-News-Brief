@@ -36,6 +36,7 @@ Groq 예산(하루 200k 토큰):
 
 from __future__ import annotations
 
+import os
 import subprocess
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -45,6 +46,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.common.batch_log import finish_job, log_error, start_job  # 공용 — 수정하지 않음
+from app.common.models.batch_job import BatchJob
 from app.core.config import get_settings
 from app.modules.feed.models.read_only import Summary
 from app.modules.feed.models.tag import TAG_TYPE_CATEGORY, Tag
@@ -115,6 +117,19 @@ def tokens_spent_today(db: Session) -> int:
     return int(count or 0) * settings.groq_tokens_per_article
 
 
+def _run_env(slot: str) -> dict[str, str]:
+    """수집기가 자기 실행 이력을 어느 run에 붙일지 알려 준다.
+
+    인자가 아니라 환경변수인 이유: 수집기 CLI의 인자는 A 소유 인터페이스이고, 이력 기록은
+    거기 얹을 성격이 아니다. 환경변수면 CLI를 손으로 돌릴 때 그냥 비워 두면 되고
+    (수집기는 MANUAL + 오늘로 떨어진다), 실행기를 바꿔도 이 파일만 고치면 된다.
+    """
+    env = dict(os.environ)
+    env["BATCH_SLOT"] = slot
+    env["BATCH_DATE"] = datetime.now(timezone.utc).date().isoformat()
+    return env
+
+
 def _resolve_command(category: str) -> tuple[list[str], Path]:
     settings = get_settings()
     root = Path(settings.collect_root).expanduser().resolve()
@@ -146,12 +161,56 @@ def _article_count(db: Session) -> int:
     return int(db.scalar(select(func.count()).select_from(Article)) or 0)
 
 
+def _start_or_join_job(db: Session, *, slot: str) -> int:
+    """이 run의 COLLECT 행을 만들거나, 이미 있으면 그 행에 합류한다.
+
+    `task_ref`는 `collect:{slot}:{날짜}`로 **호출자가 바꿀 수 없게** 고정한다. run의 정체가
+    곧 (slot, 날짜)이고, **수집기가 같은 값으로 자기 단계 결과를 누적**하므로
+    (newscollect/processing/batch_log.py) 양쪽이 반드시 같은 행을 가리켜야 한다.
+    예전에는 호출자가 ref를 넘길 수 있었는데, 그러면 COLLECT 행이 둘로 갈려
+    (래퍼 것 하나 + 수집기 것 하나) 화면에 같은 단계가 두 번 나온다.
+
+    `task_ref`는 UNIQUE라 같은 슬롯을 하루에 두 번 돌리면 INSERT가 깨진다. 그건 오류가
+    아니라 "이미 시작된 run"이므로 기존 행을 재사용한다. 이 UNIQUE가 §8-19의 중복 실행
+    최종 방어선이기도 하다 — Redis 락이 뚫려도 여기서 한 행으로 모인다.
+    """
+    ref = f"collect:{slot}:{datetime.now(timezone.utc).date().isoformat()}"
+    existing = db.scalar(select(BatchJob.id).where(BatchJob.task_ref == ref))
+    if existing is not None:
+        return int(existing)
+    return start_job(
+        db,
+        job_name=JOB_NAME,
+        task_ref=ref,
+        slot=slot,
+        # target_count는 0으로 둔다. 수집기가 실제로 시도한 **기사 수**를 누적하므로
+        # 여기서 카테고리 수를 넣으면 단위가 섞인다.
+        target_count=0,
+        started_at=datetime.now(timezone.utc),
+    )
+
+
+# 나쁜 정도. 래퍼(카테고리 단위)와 수집기(기사 단위)가 같은 행의 status를 각자 쓰므로
+# 합칠 기준이 필요하다. RUNNING/PENDING은 "아직 끝나지 않음"이라 결과 판정에 끼지 않는다.
+_STATUS_SEVERITY = {"SUCCESS": 0, "PARTIAL": 1, "FAILED": 2}
+
+
+def _worse_status(a: str | None, b: str) -> str:
+    if a not in _STATUS_SEVERITY:
+        return b
+    return a if _STATUS_SEVERITY[a] > _STATUS_SEVERITY[b] else b
+
+
+def _current_status(db: Session, job_id: int) -> str | None:
+    db.commit()  # 서브프로세스가 다른 커넥션으로 갱신했다 — 새 스냅샷으로 읽어야 보인다
+    return db.scalar(select(BatchJob.status).where(BatchJob.id == job_id))
+
+
 def run(
     db: Session,
     *,
     slot: str = "MANUAL",
     categories: list[str] | None = None,
-    task_ref: str | None = None,
 ) -> CollectResult:
     """배치 엔트리 함수. 실행 이력은 batch_jobs, 오류는 job_logs에 기록한다 (§9)."""
     settings = get_settings()
@@ -169,14 +228,7 @@ def run(
     )
     result.attempted = list(targets)
 
-    job_id = start_job(
-        db,
-        job_name=JOB_NAME,
-        task_ref=task_ref,
-        slot=slot,
-        target_count=len(targets),
-        started_at=datetime.now(timezone.utc),
-    )
+    job_id = _start_or_join_job(db, slot=slot)
     db.commit()  # 실행 이력을 먼저 확정한다 — 수집이 몇 분 걸려서 그 사이 조회가 가능해야 한다
 
     before = _article_count(db)
@@ -196,6 +248,7 @@ def run(
                 proc = subprocess.run(
                     cmd,
                     cwd=cwd,
+                    env=_run_env(slot),
                     capture_output=True,
                     text=True,
                     timeout=settings.collect_timeout_seconds,
@@ -247,9 +300,14 @@ def run(
         finish_job(
             db,
             job_id=job_id,
-            status=result.status,
-            success_count=len(result.succeeded),
-            fail_count=len(result.failed),
+            # 수집기가 이미 기사 단위 결과로 status를 써 뒀다. 여기서 그냥 덮으면
+            # **기사 실패가 가려진다** — 카테고리가 전부 성공했어도 그 안에서 url 없는
+            # 기사가 버려졌으면 SUCCESS가 아니다. 둘 중 더 나쁜 쪽을 남긴다.
+            status=_worse_status(_current_status(db, job_id), result.status),
+            # success_count / fail_count는 **건드리지 않는다.** 수집기가 그 행에
+            # (task_ref `collect:{slot}:{날짜}`로 합류해서) 기사 건수를 누적하고 있는데,
+            # 여기서 카테고리 수로 덮으면 단위가 뒤섞여 화면의 "처리 건수"가 뜻을 잃는다.
+            # 카테고리 단위 결과는 아래 detail(job_logs INFO)에 남는다.
             detail={
                 "slot": slot,
                 "provider": settings.collect_provider,

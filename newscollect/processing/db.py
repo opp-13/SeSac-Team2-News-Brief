@@ -19,6 +19,8 @@ from hashlib import sha256
 
 import pymysql
 
+from processing import batch_log
+
 SUMMARY_FAILURE_PREFIX = "(요약 실패:"
 TRANSLATION_FAILURE_PREFIX = "(번역 실패:"
 
@@ -195,10 +197,18 @@ def _upsert_summary(cursor, article_id: int, item) -> tuple[int, bool] | None:
     return summary_id, is_new
 
 
-def _insert_translation(cursor, summary_id: int, item) -> None:
+def _insert_translation(cursor, summary_id: int, item) -> str:
+    """'DONE' | 'FAILED' | 'SKIPPED' 를 돌려준다.
+
+    이전에는 셋 다 조용히 return이었다. 번역이 **필요 없는 것**(원문이 이미 한국어라
+    summary_ko가 None)과 **실패한 것**을 구분해야 단계 집계가 맞는다 -- 한국어 기사를
+    번역 실패로 세면 화면이 매 실행 실패로 보인다.
+    """
     summary_ko = getattr(item, "summary_ko", None)
-    if not summary_ko or summary_ko.startswith(TRANSLATION_FAILURE_PREFIX):
-        return
+    if summary_ko and summary_ko.startswith(TRANSLATION_FAILURE_PREFIX):
+        return "FAILED"
+    if not summary_ko:
+        return "SKIPPED"
 
     title_ko = getattr(item, "title_ko", None)
     if not title_ko or title_ko.startswith(TRANSLATION_FAILURE_PREFIX):
@@ -221,6 +231,7 @@ def _insert_translation(cursor, summary_id: int, item) -> None:
         "(SELECT article_id FROM summaries WHERE id = %s)",
         (summary_id,),
     )
+    return "DONE"
 
 
 def _insert_summary_review(cursor, summary_id: int, category: str) -> None:
@@ -237,34 +248,122 @@ def persist_stage(items: list, category: str) -> list:
     """Write items (with .summary/.summary_ko already filled in by main.py)
     into articles / article_tags / summaries / translations / summary_reviews.
     Tolerant of per-item failures -- one bad item doesn't stop the batch.
+
+    단계별 결과(`batch_jobs`)와 실패 원인(`job_logs`)도 여기서 남긴다. 요약·번역은 이미
+    앞 단계에서 끝났지만 그 성패가 item에 문자열 접두사로 실려 오므로(`(요약 실패: ...)`),
+    세 단계 결과를 한 자리에서 집계할 수 있는 곳이 여기다 -- 단계마다 따로 DB에 붙으면
+    커넥션이 늘고 부분 실패 시 이력이 서로 어긋난다.
     """
+    slot, day = batch_log.resolve_run()
+    tally = {
+        batch_log.COLLECT: [0, 0, 0],  # [target, success, fail]
+        batch_log.SUMMARIZE: [0, 0, 0],
+        batch_log.TRANSLATE: [0, 0, 0],
+    }
+    # (job_type, error_code, 메시지) -- job_logs에 남긴다. 실패 "건수"만으로는 왜 실패했는지
+    # 알 수 없고, 관리자 화면의 오류 드로어가 보여줄 것이 바로 이 사유다.
+    failures: list[tuple[str, str, str]] = []
+
     conn = pymysql.connect(**_db_config(), autocommit=False)
     try:
         with conn.cursor() as cur:
             tag_id = _lookup_tag_id(cur, category)
 
         for item in items:
+            tally[batch_log.COLLECT][0] += 1
             try:
                 with conn.cursor() as cur:
                     article_id = _upsert_article(cur, item, _upsert_source_id(cur, item))
                     if article_id is None:
+                        # url이 없어 저장을 건너뛴 경우. 수집 실패로 센다.
+                        tally[batch_log.COLLECT][2] += 1
+                        failures.append(
+                            (batch_log.COLLECT, "NO_URL", f"{item.title[:60]}: url 없음")
+                        )
                         conn.commit()
                         continue
+                    tally[batch_log.COLLECT][1] += 1
 
                     if tag_id is not None:
                         _link_article_tag(cur, article_id, tag_id)
 
+                    tally[batch_log.SUMMARIZE][0] += 1
                     result = _upsert_summary(cur, article_id, item)
-                    if result is not None:
+                    if result is None:
+                        tally[batch_log.SUMMARIZE][2] += 1
+                        failures.append(
+                            (
+                                batch_log.SUMMARIZE,
+                                "SUMMARY_FAILED",
+                                f"{item.title[:60]}: {(item.summary or '요약 없음')[:200]}",
+                            )
+                        )
+                    else:
+                        tally[batch_log.SUMMARIZE][1] += 1
                         summary_id, is_new = result
-                        _insert_translation(cur, summary_id, item)
+                        verdict = _insert_translation(cur, summary_id, item)
+                        if verdict != "SKIPPED":
+                            # 원문이 이미 한국어면 번역 대상이 아니다 -- target에도 넣지
+                            # 않는다. 넣으면 한국어 기사만 수집한 슬롯이 "번역 0/N"으로 보인다.
+                            tally[batch_log.TRANSLATE][0] += 1
+                            idx = 1 if verdict == "DONE" else 2
+                            tally[batch_log.TRANSLATE][idx] += 1
+                            if verdict == "FAILED":
+                                failures.append(
+                                    (
+                                        batch_log.TRANSLATE,
+                                        "TRANSLATION_FAILED",
+                                        f"{item.title[:60]}: "
+                                        f"{(getattr(item, 'summary_ko', '') or '')[:200]}",
+                                    )
+                                )
                         if is_new:
                             _insert_summary_review(cur, summary_id, category)
                 conn.commit()
             except Exception as e:
                 conn.rollback()
+                tally[batch_log.COLLECT][2] += 1
+                failures.append((batch_log.COLLECT, "PERSIST_FAILED", f"{item.title[:60]}: {e}"))
                 print(f"[db] '{item.title[:30]}...' 저장 실패: {e}", file=sys.stderr)
+
+        _record_run(conn, slot=slot, day=day, tally=tally, failures=failures, category=category)
     finally:
         conn.close()
 
     return items
+
+
+def _record_run(conn, *, slot, day, tally, failures, category: str) -> None:
+    """단계 집계와 실패 원인을 기록한다.
+
+    이력 기록이 실패해도 수집 자체를 죽이지 않는다 -- 기사는 이미 저장됐고, 그걸 되돌리는
+    것이 이력 한 줄보다 비싸다. 대신 조용히 넘기지 않고 stderr에 남긴다.
+    """
+    try:
+        with conn.cursor() as cur:
+            job_ids = {
+                job_type: batch_log.record_stage(
+                    cur,
+                    job_type=job_type,
+                    slot=slot,
+                    day=day,
+                    target=counts[0],
+                    success=counts[1],
+                    fail=counts[2],
+                )
+                for job_type, counts in tally.items()
+            }
+            for job_type, error_code, message in failures:
+                batch_log.log(
+                    cur,
+                    # 실패를 일으킨 **단계의** 행에 붙인다. 전부 COLLECT에 몰아넣으면
+                    # 화면에서 요약 실패가 수집 실패처럼 보인다.
+                    job_id=job_ids[job_type],
+                    level="ERROR",
+                    error_code=error_code,
+                    message=f"[{category}] {message}",
+                )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        print(f"[db] 배치 이력 기록 실패: {e}", file=sys.stderr)

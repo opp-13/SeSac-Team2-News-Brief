@@ -76,3 +76,36 @@ def test_daily_budget_fits_the_measured_cost():
     )
     # 재시도·추정 오차용 여유가 남아 있어야 한다.
     assert estimated / s.groq_daily_token_budget < 0.85
+
+
+# ── 수집기가 쓴 status를 래퍼가 가리지 않는다 ──────────────────────────
+
+@pytest.mark.parametrize(
+    "recorded,wrapper,expected",
+    [
+        (None, "SUCCESS", "SUCCESS"),        # 수집기가 아직 아무것도 안 씀
+        ("SUCCESS", "PARTIAL", "PARTIAL"),   # 카테고리 하나가 아예 못 돌았다
+        ("PARTIAL", "SUCCESS", "PARTIAL"),   # 회귀 방지: 기사 실패가 가려지면 안 된다
+        ("FAILED", "PARTIAL", "FAILED"),
+        ("PARTIAL", "FAILED", "FAILED"),
+        ("RUNNING", "SUCCESS", "SUCCESS"),   # 미완료 상태는 판정에 끼지 않는다
+    ],
+)
+def test_wrapper_does_not_mask_collector_status(recorded, wrapper, expected):
+    """래퍼(카테고리 단위)와 수집기(기사 단위)가 같은 행의 status를 각자 쓴다.
+
+    래퍼가 무조건 덮으면, 카테고리가 전부 성공했어도 그 안에서 url 없는 기사가 버려진
+    경우가 SUCCESS로 보인다. 둘 중 더 나쁜 쪽이 남아야 한다.
+    """
+    assert collect._worse_status(recorded, wrapper) == expected
+
+
+def test_collect_task_ref_is_derived_not_passed():
+    """수집기와 래퍼가 반드시 같은 batch_jobs 행을 가리켜야 한다.
+
+    호출자가 task_ref를 넘길 수 있으면 COLLECT 행이 둘로 갈린다(래퍼 것 + 수집기 것).
+    run()의 시그니처에 task_ref가 없어야 그 사고가 구조적으로 불가능하다.
+    """
+    import inspect
+
+    assert "task_ref" not in inspect.signature(collect.run).parameters

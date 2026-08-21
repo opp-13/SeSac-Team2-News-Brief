@@ -77,7 +77,9 @@ def _run_collect(slot: str) -> None:
 
     db = SessionLocal()
     try:
-        result = collect.run(db, slot=slot, task_ref=f"collect:{slot}:{date.today().isoformat()}")
+        # task_ref를 넘기지 않는다 — collect.run이 (slot, 날짜)로 직접 만든다.
+        # 수집기도 같은 값을 쓰므로 양쪽이 같은 batch_jobs 행에 모인다.
+        result = collect.run(db, slot=slot)
         logger.info(
             "[scheduler] 수집 완료 — slot=%s 성공=%d 실패=%d 예산초과=%d 신규기사=%d 추정토큰=%d",
             slot,
