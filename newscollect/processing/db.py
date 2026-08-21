@@ -67,13 +67,35 @@ def _has_real_content(text: str | None) -> bool:
     return bool(text) and not text.startswith("(")
 
 
-def _lookup_source_id(cursor, provider: str) -> int | None:
-    cursor.execute("SELECT id FROM news_sources WHERE name = %s", (provider,))
-    row = cursor.fetchone()
-    if row is None:
-        print(f"[db] news_sources에 '{provider}' 없음 (seed_mock.sql 적용 확인)", file=sys.stderr)
+def _upsert_source_id(cursor, item) -> int | None:
+    """기사의 **언론사**를 news_sources에서 찾고, 없으면 만든다.
+
+    `item.provider`("naver"/"freenews")가 아니라 `item.source`(언론사명)로 찾는다.
+    스키마 주석이 그 자리를 이렇게 정의한다 -- 테이블은 '언론사/뉴스 공급자'이고
+    `name`은 언론사명, `provider`는 수집 방식('NEWS_API'/'RSS')이다.
+
+    이전에는 provider로 찾아서 모든 기사가 'naver'/'freenews' 행 하나에 매달렸고,
+    피드 배지에 신문사 대신 수집 경로가 떴다. Free News API는 언론사(publisher)와
+    기자(authors)를 따로 주므로 섞을 이유가 없다.
+
+    조회가 아니라 upsert인 이유: 언론사는 수집하면서 계속 늘어난다. 미리 시드해 둘 수
+    있는 목록이 아니다. `uk_sources_name(name)` UNIQUE가 중복을 막는다.
+    """
+    name = (getattr(item, "source", None) or "").strip()
+    if not name:
+        # 언론사를 모르면 NULL로 둔다. 'unknown' 같은 가짜 행을 만들지 않는다 --
+        # articles.source_id는 NULL 허용이고, 피드는 배지를 비운다.
         return None
-    return row[0]
+
+    cursor.execute(
+        """
+        INSERT INTO news_sources (name, provider, language)
+        VALUES (%s, %s, %s)
+        ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+        """,
+        (name[:100], "NEWS_API", (getattr(item, "language", None) or "ko")[:5]),
+    )
+    return cursor.lastrowid
 
 
 def _category_slug(category: str) -> str:
@@ -219,13 +241,12 @@ def persist_stage(items: list, category: str) -> list:
     conn = pymysql.connect(**_db_config(), autocommit=False)
     try:
         with conn.cursor() as cur:
-            source_ids = {p: _lookup_source_id(cur, p) for p in ("naver", "freenews")}
             tag_id = _lookup_tag_id(cur, category)
 
         for item in items:
             try:
                 with conn.cursor() as cur:
-                    article_id = _upsert_article(cur, item, source_ids.get(item.provider))
+                    article_id = _upsert_article(cur, item, _upsert_source_id(cur, item))
                     if article_id is None:
                         conn.commit()
                         continue
