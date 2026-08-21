@@ -14,12 +14,30 @@ from providers import CATEGORIES, PROVIDER_NAMES, get_provider
 
 load_dotenv()
 
+# DB(`tags.slug`)는 "internet-security", Free News API topic은 "internet security"다.
+# 배치는 슬러그로 부르고 사람은 topic으로 부르므로 둘 다 받는다.
+#
+# 단순히 하이픈을 공백으로 바꾸면 안 된다 -- "arts-design"은 하이픈이 원래 이름의
+# 일부라 그대로 두어야 하고, "internet-security"는 공백으로 되돌려야 한다. 슬러그를
+# 만들 때와 같은 규칙으로 역인덱스를 만들어 두면 이 구분이 자동으로 맞는다.
+_CATEGORY_BY_SLUG = {c.lower().replace(" ", "-"): c for c in CATEGORIES}
+
+
+def _normalize_category(value: str) -> str:
+    return _CATEGORY_BY_SLUG.get(value.strip().lower(), value)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="카테고리 기반 뉴스 검색 파이프라인 (NAVER + Free News API)"
     )
-    parser.add_argument("--category", choices=CATEGORIES, required=True, help="검색 카테고리")
+    parser.add_argument(
+        "--category",
+        type=_normalize_category,  # choices 검사 전에 슬러그를 topic으로 바꾼다
+        choices=CATEGORIES,
+        required=True,
+        help="검색 카테고리 (topic 또는 tags.slug — 'internet security' / 'internet-security' 모두 가능)",
+    )
     parser.add_argument(
         "--provider",
         choices=["all", *PROVIDER_NAMES],

@@ -28,7 +28,7 @@ import httpx
 import redis
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
-from app.batch import curate, retention
+from app.batch import collect, curate, retention
 from app.core.config import get_settings
 from app.core.redis import _pool
 from app.db.session import SessionLocal
@@ -53,11 +53,51 @@ def _acquire_lock(client: redis.Redis, job_type: str, slot: str) -> bool:
     return bool(client.set(key, "1", nx=True, ex=_LOCK_TTL_SECONDS))
 
 
-async def trigger_collect(slot: str) -> None:
-    """A+B 수집·요약 파이프라인을 HTTP로 깨운다.
+def _run_collect(slot: str) -> None:
+    """수집기를 CLI 서브프로세스로 돌린다 (`app.batch.collect`).
 
-    엔드포인트가 아직 없으므로(설정 미지정) 기본은 건너뛴다. A가 경로를 확정하면
-    `COLLECT_TRIGGER_URL` 설정만 채우면 된다 — 이 파일은 고치지 않는다.
+    동기 함수라 APScheduler가 스레드에서 돌린다 — 슬롯당 21개 카테고리에 수 분이 걸리므로
+    이벤트 루프를 막으면 안 된다.
+
+    큐레이션과 달리 Redis 락 job_type은 'COLLECT'다. 같은 슬롯의 수집과 큐레이션이 서로
+    다른 락을 잡아야 한쪽이 다른 쪽을 막지 않는다.
+    """
+    settings = get_settings()
+    if not settings.collect_root:
+        logger.info("[scheduler] collect 건너뜀 — COLLECT_ROOT 미설정 (slot=%s)", slot)
+        return
+
+    client = redis.Redis(connection_pool=_pool)
+    try:
+        if not _acquire_lock(client, "COLLECT", slot):
+            logger.info("[scheduler] 수집 이미 실행됨, 건너뜀 — slot=%s", slot)
+            return
+    finally:
+        client.close()
+
+    db = SessionLocal()
+    try:
+        result = collect.run(db, slot=slot, task_ref=f"collect:{slot}:{date.today().isoformat()}")
+        logger.info(
+            "[scheduler] 수집 완료 — slot=%s 성공=%d 실패=%d 예산초과=%d 신규기사=%d 추정토큰=%d",
+            slot,
+            len(result.succeeded),
+            len(result.failed),
+            len(result.skipped_over_budget),
+            result.articles_created,
+            result.estimated_tokens,
+        )
+    except Exception as exc:  # noqa: BLE001 — 수집 실패가 큐레이션까지 막지 않는다
+        logger.error("[scheduler] 수집 실패 — slot=%s error=%s", slot, exc)
+    finally:
+        db.close()
+
+
+async def trigger_collect(slot: str) -> None:
+    """A가 수집 트리거 엔드포인트를 만들면 쓰는 HTTP 경로.
+
+    지금은 `_run_collect`(CLI 서브프로세스)가 실제 경로다. `COLLECT_TRIGGER_URL`이
+    채워지면 이쪽이 대신 걸린다 — 둘 다 설정돼 있으면 HTTP가 우선이다.
     """
     settings = get_settings()
     url = settings.collect_trigger_url
@@ -114,8 +154,9 @@ def build_scheduler() -> AsyncIOScheduler:
 
     for slot in settings.batch_slots:
         hour, minute = _slot_to_time(slot)
+        # HTTP 트리거가 설정돼 있으면 그쪽, 아니면 CLI 서브프로세스로 수집한다.
         scheduler.add_job(
-            trigger_collect,
+            trigger_collect if settings.collect_trigger_url else _run_collect,
             trigger="cron",
             hour=hour,
             minute=minute,
