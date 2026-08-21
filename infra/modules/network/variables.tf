@@ -30,33 +30,3 @@ variable "bastion_ssh_cidr" {
   description = "CIDR allowed to SSH into the bastion security group"
   type        = string
 }
-
-variable "enable_private_dns" {
-  description = "Whether to create a team2.local Route53 private hosted zone (db/redis/api records). Optional -- off by default. When true, db_private_ip/redis_private_ip/internal_nlb_dns_name/internal_nlb_zone_id are required (they come from module.compute's outputs)."
-  type        = bool
-  default     = false
-}
-
-variable "db_private_ip" {
-  description = "DB instance private IP, used for db.team2.local. Only used when enable_private_dns = true."
-  type        = string
-  default     = null
-}
-
-variable "redis_private_ip" {
-  description = "Redis instance private IP, used for redis.team2.local. Only used when enable_private_dns = true."
-  type        = string
-  default     = null
-}
-
-variable "internal_nlb_dns_name" {
-  description = "Internal NLB DNS name, aliased from api.team2.local. Only used when enable_private_dns = true."
-  type        = string
-  default     = null
-}
-
-variable "internal_nlb_zone_id" {
-  description = "Internal NLB hosted zone ID, required for the api.team2.local ALIAS record. Only used when enable_private_dns = true."
-  type        = string
-  default     = null
-}

@@ -111,6 +111,12 @@ variable "enable_https" {
   default     = false
 }
 
+variable "enable_private_dns" {
+  description = "Whether to create the team2.local Route53 private hosted zone (db/redis/api records pointing at this module's own db/redis instances and internal NLB). Optional -- off by default."
+  type        = bool
+  default     = false
+}
+
 variable "acm_certificate_domain" {
   description = <<-EOT
     Domain name exactly as registered on an existing, already-ISSUED ACM

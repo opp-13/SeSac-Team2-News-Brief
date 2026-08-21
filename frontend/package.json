@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "build:ci": "VITE_APP_VERSION=$(git rev-parse --short HEAD 2>/dev/null) npm run build",
+    "build:ci": "VITE_APP_VERSION=$(git rev-parse --short HEAD 2>/dev/null) vite build",
     "preview": "vite preview",
     "lint": "eslint .",
     "format": "prettier --write .",
