@@ -1,0 +1,37 @@
+project     = "YOUR PROJECT"
+owner       = "YOUR NAME"
+zone        = "NETWORK ZONE"
+environment = "YOUR CURRENT WORKING DIR"
+aws_profile = null
+region      = "YOUR REGION"
+
+vpc_cidr            = "REPLACEME"
+azs                 = ["REPLACEME", "REPLACEME"]
+
+public_subnet_cidrs = ["REPLACEME", "REPLACEME"]
+
+private_subnets = [
+  { name = "REPLACEME-a", cidr = "REPLACEME" },
+  { name = "REPLACEME-c", cidr = "REPLACEME" },
+
+  { name = "REPLACEME-a", cidr = "REPLACEME" },
+  { name = "REPLACEME-c", cidr = "REPLACEME" },
+
+  { name = "REPLACEME-a", cidr = "REPLACEME" },
+  { name = "REPLACEME-c", cidr = "REPLACEME" },
+]
+
+bastion_ssh_cidr    = "REPLACEME"
+
+## aws에 등록된 키페어 넣으면 됩니다.
+key_pair_name = "REPLACEME"
+
+# optional 인자
+
+create_bastion = false
+create_deploy  = false
+enable_private_dns = false
+
+# 무조건 acm_certificate_domain에 등록된 인자를 넣으세요. (경우에 따라 루트도메인이 아닐 수 있음)
+enable_https = false
+acm_certificate_domain = "REPLACEME"
