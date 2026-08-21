@@ -10,7 +10,15 @@ permissions:
 
 jobs:
   deploy-frontend:
+    strategy:
+      # One AWS account per environment (each teammate has their own). Add a
+      # name here once its GitHub Environment + secrets/vars are set up --
+      # nothing else in this file needs to change.
+      matrix:
+        environment: [john]
+      fail-fast: false
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v6
 
@@ -23,10 +31,11 @@ jobs:
 
       - name: Assemble revision bundle
         run: |
-          mkdir -p bundle
-          cp -r frontend/dist/. bundle/
+          mkdir -p bundle/dist
+          cp -r frontend/dist/. bundle/dist/
           cp deploy/frontend/appspec.yml bundle/
           cp -r deploy/frontend/scripts bundle/
+          chmod +x bundle/scripts/*.sh
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -46,16 +55,32 @@ jobs:
             --s3-location bucket=${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }},key=frontend/${{ github.sha }}.zip,bundleType=zip
 
   deploy-backend:
+    strategy:
+      matrix:
+        environment: [john]
+      fail-fast: false
     runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
     steps:
       - uses: actions/checkout@v6
 
       - name: Assemble revision bundle
         run: |
-          mkdir -p bundle
-          cp -r backend/. bundle/
+          mkdir -p bundle/src
+          cp -r backend/. bundle/src/
           cp deploy/backend/appspec.yml bundle/
           cp -r deploy/backend/scripts bundle/
+          chmod +x bundle/scripts/*.sh
+
+      - name: Write .env
+        run: |
+          cat > bundle/src/.env <<EOF
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          API_VERSION=${{ github.sha }}
+          DEBUG=false
+          SESSION_COOKIE_SECURE=true
+          EOF
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
