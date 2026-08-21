@@ -117,7 +117,7 @@ GET /api/v1/feed?tag=AI&cursor=eyJpZCI6MTIzfQ&limit=20
 | `id` | **string** | `articles.id` | ⚠️ `BIGINT UNSIGNED`는 JS 안전 정수 범위(2^53)를 넘을 수 있어 **문자열로 직렬화**할 것 |
 | `source` | string | `news_sources.name` | `articles.source_id`가 NULL이면? → 아래 열려있는 질문 |
 | `category` | string | `article_tags` ⋈ `tags` 중 `tag_type='CATEGORY'` | 2개 이상 매칭 시 규칙 필요 (아래 참고) |
-| `headline` | string | `articles.title` | 프론트에서 2줄 말줄임 |
+| `headline` | string | 번역 제목이 있으면 `translations.translated_title`, 없으면 `articles.title` | 프론트에서 2줄 말줄임. 요약과 같은 기준이다 — 제목만 원문으로 남으면 한 행 안에서 언어가 갈린다 |
 | `tags` | string[] | `article_tags` ⋈ `tags` 중 `tag_type='KEYWORD'` | 로그인 시에만 의미 있음. 프론트는 최대 2개만 표시 |
 | `url` | string | `articles.url` | 원문 링크 (새 탭) |
 | `publishedAt` | string | `articles.published_at` | ISO 8601 UTC |
@@ -261,6 +261,10 @@ GET /api/v1/articles/128402?summaryType=THREE_LINE
 기본 언어는 `ko`다.
 
 `translations.status='FAILED'`인 번역은 본문이 오류 문구라 노출하지 않고 원문으로 떨어진다.
+
+**제목(`headline`)도 같은 번역 행에서 꺼낸다.** 본문과 제목이 서로 다른 번역에서 오면
+안 되기 때문이다. 단 `translated_title`은 NULL일 수 있다(제목 번역이 붙기 전에 저장된
+행). 그 경우에만 `articles.title`로 떨어진다 — 빈 제목을 내보내지 않는다.
 
 **번역이 없다고 그 자리에서 만들지 않는다** (CLAUDE.md §1). 원문 요약으로 대체할 뿐이다.
 

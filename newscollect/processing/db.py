@@ -25,12 +25,17 @@ TRANSLATION_FAILURE_PREFIX = "(번역 실패:"
 # Keep in sync with processing/summarize_and_translate.py's GROQ_MODEL.
 # Not imported from there on purpose -- db.py doesn't depend on that module
 # (main.py owns calling the summarizer; this module only writes to MySQL).
+#
+# provider/model_name are two columns, not one `model_id` (schema V2, CLAUDE.md
+# §8-10): provider is who was called, model_name is what actually answered.
+_SUMMARY_PROVIDER = "groq"
 _GROQ_MODEL = "openai/gpt-oss-20b"
 
 # Keep in sync with processing/translate.py -- that's the stage that actually
 # fills item.title_ko/summary_ko before persist_stage runs (it overwrites
 # whatever summarize_and_translate.summarize_item() set, since it runs after).
-_TRANSLATE_MODEL_ID = "googletrans"
+_TRANSLATE_PROVIDER = "google"
+_TRANSLATE_MODEL_NAME = "googletrans"
 
 
 def _db_config() -> dict:
@@ -146,14 +151,15 @@ def _upsert_summary(cursor, article_id: int, item) -> tuple[int, bool] | None:
     cursor.execute(
         """
         INSERT INTO summaries
-            (article_id, summary_type, content, language, model_id, review_status)
-        VALUES (%s, 'THREE_LINE', %s, %s, %s, 'PENDING')
+            (article_id, summary_type, content, language, provider, model_name, review_status)
+        VALUES (%s, 'THREE_LINE', %s, %s, %s, %s, 'PENDING')
         ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
         """,
         (
             article_id,
             item.summary,
             item.language,
+            _SUMMARY_PROVIDER,
             _GROQ_MODEL,
         ),
     )
@@ -179,11 +185,14 @@ def _insert_translation(cursor, summary_id: int, item) -> None:
     cursor.execute(
         """
         INSERT INTO translations
-            (summary_id, target_language, translated_title, translated_content, model_id, status)
-        VALUES (%s, 'ko', %s, %s, %s, 'DONE')
-        ON DUPLICATE KEY UPDATE id = LAST_INSERT_ID(id)
+            (summary_id, target_language, translated_title, translated_content,
+             provider, model_name, status)
+        VALUES (%s, 'ko', %s, %s, %s, %s, 'DONE')
+        ON DUPLICATE KEY UPDATE
+            translated_title = VALUES(translated_title),
+            id = LAST_INSERT_ID(id)
         """,
-        (summary_id, title_ko, summary_ko, _TRANSLATE_MODEL_ID),
+        (summary_id, title_ko, summary_ko, _TRANSLATE_PROVIDER, _TRANSLATE_MODEL_NAME),
     )
     cursor.execute(
         "UPDATE articles SET status = 'TRANSLATED' WHERE id = "
