@@ -1,0 +1,16 @@
+version: 0.0
+os: linux
+files:
+  - source: src
+    destination: /home/ec2-user/backend
+file_exists_behavior: OVERWRITE
+hooks:
+  ApplicationStop:
+    - location: scripts/stop.sh
+      timeout: 30
+  AfterInstall:
+    - location: scripts/start.sh
+      timeout: 60
+  ValidateService:
+    - location: scripts/validate.sh
+      timeout: 30
