@@ -25,7 +25,7 @@ resource "aws_iam_role_policy_attachment" "codedeploy_instance" {
   count = var.create_deploy ? 1 : 0
 
   role       = aws_iam_role.codedeploy_instance[0].name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2RoleforAWSCodeDeploy"
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforAWSCodeDeploy"
 }
 
 resource "aws_iam_instance_profile" "codedeploy_instance" {
