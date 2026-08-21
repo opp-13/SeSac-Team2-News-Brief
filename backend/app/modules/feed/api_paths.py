@@ -34,3 +34,8 @@ MAX_PAGE_SIZE = 50
 ADMIN_RETENTION_PREFIX = f"{API_PREFIX}/admin/retention"
 ADMIN_RETENTION_LIST = ""                       # GET   ADMIN_RETENTION_PREFIX
 ADMIN_RETENTION_UPDATE = "/{target_entity}"     # PATCH ADMIN_RETENTION_PREFIX/{targetEntity}
+
+# --- 관리자: 배치 실행 이력 (docs/api-contracts/admin.md §1) ---
+ADMIN_PIPELINE_PREFIX = f"{API_PREFIX}/admin/pipeline"
+ADMIN_PIPELINE_RUNS = "/runs"                   # GET ADMIN_PIPELINE_PREFIX/runs
+ADMIN_PIPELINE_RUN_LOGS = "/runs/{run_id}/logs"  # GET .../runs/{runId}/logs

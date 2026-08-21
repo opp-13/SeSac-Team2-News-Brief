@@ -31,3 +31,26 @@ def decode(raw: str) -> tuple[datetime, int]:
         return datetime.fromisoformat(data["p"]), int(data["i"])
     except Exception as exc:  # noqa: BLE001 — 어떤 형태로 깨졌든 사용자에겐 같은 오류다
         raise BadRequestError("INVALID_CURSOR") from exc
+
+
+def encode_run(executed_at: datetime, run_key: str) -> str:
+    """배치 실행 이력용 커서.
+
+    피드와 달리 run은 `(날짜, slot)`으로 묶은 **집계 행**이라 정수 id가 없다. 그래서
+    tie-breaker로 run 키 문자열(`20260821-0700`)을 쓴다. 같은 executed_at을 갖는 run이
+    둘 나오는 일은 사실상 없지만, 커서가 그 경우에 무한 루프가 되지 않게 키를 함께 담는다.
+    """
+    payload = json.dumps(
+        {"t": executed_at.isoformat(), "k": run_key}, separators=(",", ":")
+    )
+    return base64.urlsafe_b64encode(payload.encode()).decode().rstrip("=")
+
+
+def decode_run(raw: str) -> tuple[datetime, str]:
+    """실패하면 INVALID_CURSOR(400) — 피드 커서와 같은 오류 코드다."""
+    try:
+        padded = raw + "=" * (-len(raw) % 4)
+        data = json.loads(base64.urlsafe_b64decode(padded.encode()))
+        return datetime.fromisoformat(data["t"]), str(data["k"])
+    except Exception as exc:  # noqa: BLE001 — 어떤 형태로 깨졌든 사용자에겐 같은 오류다
+        raise BadRequestError("INVALID_CURSOR") from exc

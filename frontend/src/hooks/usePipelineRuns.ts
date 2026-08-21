@@ -1,20 +1,29 @@
 import { useQuery } from '@tanstack/react-query'
-import { mockPipelineRuns } from '../mocks/pipelineMockData'
-import type { PipelineRun } from '../types/admin'
+import { fetchPipelineRuns, fetchRunLogs, type LogLevel } from '../api/admin'
 
-// frontend/CLAUDE.md §2 규칙2: 목업 데이터를 컴포넌트가 직접 import하는 대신 TanStack
-// Query 뒤로 옮긴다 (hooks/useFeed.ts와 같은 잠정 패턴).
-// TODO(§9 작업순서 이후 단계): docs/api-contracts/admin.md가 아직 없다. 계약 확정 후
-// api/admin.ts + MSW 핸들러로 교체한다.
-function fetchPipelineRuns(): Promise<PipelineRun[]> {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(mockPipelineRuns), 700)
-  })
-}
-
+/**
+ * 배치 실행 이력. `docs/api-contracts/admin.md` §1이 확정되어 목업을 걷어냈다.
+ *
+ * 페이지네이션은 아직 첫 페이지만 쓴다 — 화면에 "더 보기"가 없기 때문이다.
+ * 서버는 커서를 내려주므로 필요해지면 useInfiniteQuery로 바꾼다.
+ */
 export function usePipelineRuns() {
   return useQuery({
     queryKey: ['admin', 'pipeline-runs'],
-    queryFn: fetchPipelineRuns,
+    queryFn: () => fetchPipelineRuns(),
+    select: (page) => page.runs,
+  })
+}
+
+/**
+ * 실행 1건의 로그. 사이드 드로어가 열릴 때만 조회한다 —
+ * 목록을 그릴 때 전부 미리 받아 두면 대부분 쓰이지 않는다.
+ */
+export function useRunLogs(runId: string | null, level?: LogLevel) {
+  return useQuery({
+    queryKey: ['admin', 'pipeline-logs', runId, level ?? 'ALL'],
+    queryFn: () => fetchRunLogs(runId as string, level),
+    enabled: runId !== null,
+    select: (res) => res.logs,
   })
 }
