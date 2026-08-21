@@ -157,19 +157,16 @@ export default function NewsFeedPage() {
             </div>
           )}
 
-          {/* Guest login banner — 검색 중에는 감춘다(목적이 뚜렷한 화면에 배너를 겹치지 않는다) */}
+          {/* Guest login banner — 검색 중에는 감춘다(목적이 뚜렷한 화면에 배너를 겹치지 않는다)
+
+              로그인 버튼은 두지 않는다. 헤더 우측에 비로그인 상태면 항상 로그인 버튼이
+              떠 있어서(components/common/Header.tsx), 같은 화면에 같은 동작의 버튼이
+              둘이 되면 어느 쪽을 눌러야 하는지 고민하게 만든다. 배너는 안내만 한다. */}
           {!isLoggedIn && !searchQuery && (
-            <div className="flex items-center justify-between px-4 py-3 rounded-xl border border-slate-200 bg-white mb-5">
+            <div className="px-4 py-3 rounded-xl border border-slate-200 bg-white mb-5">
               <p className="text-slate-700 text-[15px]">
                 로그인하고 관심사에 맞는 뉴스를 받아보세요
               </p>
-              <button
-                onClick={() => navigate('/login')}
-                className="h-8 px-3 rounded-lg text-white text-[13px] font-medium shrink-0"
-                style={{ background: colors.accent, borderRadius: radius.control }}
-              >
-                로그인
-              </button>
             </div>
           )}
 
