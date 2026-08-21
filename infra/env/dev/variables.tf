@@ -92,6 +92,12 @@ variable "enable_https" {
   default     = false
 }
 
+variable "create_deploy" {
+  description = "Whether to create the CodeDeploy pipeline (module.deploy: OIDC provider/role, S3 artifacts bucket, CodeDeploy apps/deployment groups). Optional -- on by default."
+  type        = bool
+  default     = true
+}
+
 variable "acm_certificate_domain" {
   description = <<-EOT
     Domain name exactly as registered on an existing, already-ISSUED ACM

@@ -29,6 +29,7 @@ key_pair_name = "REPLACEME"
 # optional 인자
 
 create_bastion = false
+create_deploy  = false
 
 # 무조건 acm_certificate_domain에 등록된 인자를 넣으세요. (경우에 따라 루트도메인이 아닐 수 있음)
 enable_https = false

@@ -38,9 +38,19 @@ module "compute" {
   bastion_security_group_id        = module.network.bastion_security_group_id
 
   create_bastion = var.create_bastion
+  create_deploy  = var.create_deploy
   key_pair_name  = var.key_pair_name
 
   enable_https           = var.enable_https
   acm_certificate_domain = var.acm_certificate_domain
+}
+
+module "deploy" {
+  source = "../../modules/deploy"
+  count  = var.create_deploy ? 1 : 0
+
+  name_prefix = var.zone
+  github_org  = "opp-13"
+  github_repo = "SeSac-Team2-News-Brief"
 }
 
