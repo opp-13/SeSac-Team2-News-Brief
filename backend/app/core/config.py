@@ -60,7 +60,51 @@ class Settings(BaseSettings):
 
     collect_trigger_url: str | None = None
     """A+B 파이프라인을 깨우는 HTTP 엔드포인트. 미정이라 기본은 None이고,
-    비어 있으면 수집 트리거 단계를 건너뛴다 — 없는 주소로 매 슬롯 실패 로그를 쌓지 않는다."""
+    비어 있으면 수집 트리거 단계를 건너뛴다 — 없는 주소로 매 슬롯 실패 로그를 쌓지 않는다.
+
+    `collect_root`가 설정돼 있으면 이쪽 대신 CLI 서브프로세스로 수집한다
+    (`app/batch/collect.py`). 둘 다 비어 있으면 수집 단계를 건너뛴다."""
+
+    # --- 수집 (app/batch/collect.py) ---
+    collect_root: str | None = None
+    """newscollect 패키지 경로. 비어 있으면 수집 배치를 건너뛴다 (기본 동작).
+
+    수집기는 CLI만 제공하고 HTTP 서버가 없어서 서브프로세스로 부른다. 경로를 코드에
+    박지 않는 이유는 배포 형태가 정해지지 않았기 때문이다 — 같은 머신에 두 디렉토리가
+    나란히 있는 지금 구조에 의존하는 값이라 설정으로 뺀다."""
+
+    collect_python: str | None = None
+    """수집기를 돌릴 파이썬 실행 파일. 비어 있으면 `{collect_root}/.venv/bin/python`.
+
+    백엔드 venv와 다르다 — 수집기는 sentence-transformers/torch를 쓰고 백엔드는 쓰지 않는다."""
+
+    collect_provider: str = "freenews"
+    """수집 대상 프로바이더. 현재 freenews 단독이다.
+
+    naver는 (1) 카테고리 개념이 없어 63개 topic을 자유 검색어로 던져야 하고,
+    (2) description이 130~190자뿐이라 요약 입력으로 부족하며(출력이 입력보다 길어진다),
+    (3) 일별 호출 한도가 Groq 예산보다 먼저 걸린다. freenews는 63개 topic이 그대로
+    `tags.slug`와 일치한다 (CLAUDE.md §8-16)."""
+
+    collect_display: int = 2
+    """카테고리당 수집 건수. 예산 근거는 app/batch/collect.py 상단 주석 참고."""
+
+    collect_language: str = "en"
+    """freenews 검색 언어. 영문 기사를 받아 한국어로 번역하는 것이 이 서비스의 핵심이다."""
+
+    collect_timeout_seconds: int = 300
+    """카테고리 1건의 타임아웃. 실측 약 20초(display=2)라 넉넉하게 잡았다."""
+
+    groq_daily_token_budget: int = 200_000
+    """Groq 하루 토큰 한도. 초과하면 남은 카테고리를 건너뛴다."""
+
+    groq_tokens_per_article: int = 1_200
+    """기사 1건 요약의 토큰 추정치.
+
+    실측값: freenews 본문 요약이 802~1,003 토큰(max_tokens=300 기준). 절단을 고치려고
+    max_tokens를 올리면 completion이 늘어나므로 여유를 얹어 1,200으로 잡았다.
+    **추정치인 이유**: 수집기가 Groq `usage` 응답을 버려서 실제 사용량을 알 수 없다.
+    B가 usage를 반환하게 고치면 이 상수 대신 실측 누적으로 바꾼다."""
 
 
 @lru_cache
