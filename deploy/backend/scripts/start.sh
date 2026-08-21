@@ -4,9 +4,13 @@ set -euxo pipefail
 # requirements.txt is the dependency source of truth (backend/pyproject.toml
 # carries no [project.dependencies] section on purpose -- see its header
 # comment), so this is a plain venv + pip install, not uv.
+sudo dnf install -y python3.14
+
+sudo chown -R ec2-user:ec2-user /home/ec2-user/backend
+
 sudo -u ec2-user bash -c '
   cd /home/ec2-user/backend
-  python3 -m venv .venv
+  python3.14 -m venv .venv
   .venv/bin/pip install -r requirements.txt
 '
 
