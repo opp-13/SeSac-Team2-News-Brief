@@ -1,0 +1,101 @@
+# 단일 EC2에 mysql/redis/backend/frontend를 한 번에 띄우기 위한 compose 파일.
+# 브릿지 드라이버의 전용 네트워크(newsbrief-net)를 직접 만들어 쓴다 -- compose가
+# 프로젝트별로 자동 생성하는 기본 네트워크에 얹지 않는다. 서비스 이름(mysql/redis/
+# backend)이 이 네트워크 안에서 그대로 DNS로 풀린다.
+#
+# 실행:
+#   cp .env.compose.example .env
+#   # .env 채운 뒤
+#   docker compose up -d mysql redis
+#   docker compose run --rm migrate      # 스키마는 Alembic으로만 (CLAUDE.md 원칙)
+#   docker compose up -d backend frontend
+
+networks:
+  newsbrief-net:
+    name: newsbrief-net
+    driver: bridge
+
+services:
+  mysql:
+    image: mysql:8.0
+    restart: unless-stopped
+    networks:
+      - newsbrief-net
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_0900_ai_ci
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${DB_NAME:-news_ai}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-p${MYSQL_ROOT_PASSWORD}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - newsbrief-net
+
+  # 스키마는 Alembic으로만 만든다 (CLAUDE.md §2.1) -- schema.sql을 손으로 실행하지
+  # 않는다. `docker compose up`에 포함되지 않도록 profile로 분리해두고, 스키마가
+  # 바뀌었을 때만 명시적으로 `docker compose run --rm migrate`로 실행한다.
+  migrate:
+    image: ${DOCKERHUB_USERNAME}/newsbrief-backend:${IMAGE_TAG:-latest}
+    profiles: ["tools"]
+    networks:
+      - newsbrief-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-news_ai}
+      REDIS_URL: redis://redis:6379/0
+    command: ["alembic", "upgrade", "head"]
+
+  backend:
+    image: ${DOCKERHUB_USERNAME}/newsbrief-backend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - newsbrief-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-news_ai}
+      REDIS_URL: redis://redis:6379/0
+      SESSION_COOKIE_SECURE: "true"
+    ports:
+      - "8000:8000"
+
+  frontend:
+    image: ${DOCKERHUB_USERNAME}/newsbrief-frontend:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - newsbrief-net
+    depends_on:
+      - backend
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8000"
+    ports:
+      - "80:80"
+
+volumes:
+  mysql-data:
