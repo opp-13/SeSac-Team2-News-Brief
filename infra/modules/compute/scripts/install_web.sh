@@ -24,13 +24,13 @@ systemctl enable --now codedeploy-agent
 
 ## ELSE
 
+# Deploys are Docker images now (deploy/frontend) -- nginx/node don't need to
+# be installed on the host at all, the image brings its own.
 sudo dnf update -y
-sudo dnf install -y nginx nodejs22 nodejs22-npm
+sudo dnf install -y docker
 
-node --version
-npm --version
-nginx -v
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
 
-sudo dnf install -y git
-git --version
+docker --version
 

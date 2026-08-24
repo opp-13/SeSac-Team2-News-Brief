@@ -24,18 +24,12 @@ systemctl enable --now codedeploy-agent
 
 ## ELSE
 
+# Deploys are Docker images now (deploy/backend) -- python/uv don't need to
+# be installed on the host at all, the image brings its own.
 sudo dnf update -y
+sudo dnf install -y docker
 
-sudo dnf install -y python3.14
+sudo systemctl enable --now docker
+sudo usermod -aG docker ec2-user
 
-python3 --version
-
-sudo dnf install -y git
-git --version
-
-curl -LsSf https://astral.sh/uv/install.sh | sh
-uv --version
-
-echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-source ~/.bashrc
-uv --version
+docker --version

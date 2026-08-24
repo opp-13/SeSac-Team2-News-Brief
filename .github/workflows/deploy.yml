@@ -1,0 +1,118 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Build"]
+    types: [completed]
+
+permissions:
+  id-token: write
+  contents: read
+  actions: read
+
+jobs:
+  read-outputs:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.read.outputs.frontend }}
+      backend: ${{ steps.read.outputs.backend }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-outputs
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: read
+        run: |
+          source outputs.env
+          echo "frontend=$frontend" >> "$GITHUB_OUTPUT"
+          echo "backend=$backend" >> "$GITHUB_OUTPUT"
+
+  deploy-frontend:
+    needs: read-outputs
+    if: needs.read-outputs.outputs.frontend == 'true'
+    strategy:
+      # One AWS account per environment (each teammate has their own). Add a
+      # name here once its GitHub Environment + secrets/vars are set up --
+      # nothing else in this file needs to change.
+      matrix:
+        environment: [john]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Assemble revision and trigger deployment
+        run: |
+          mkdir -p bundle
+          echo "${{ vars.DOCKERHUB_USERNAME }}/dmz-frontend:${{ github.event.workflow_run.head_sha }}" > bundle/image.txt
+          cp deploy/frontend/appspec.yml bundle/
+          cp -r deploy/frontend/scripts bundle/
+          chmod +x bundle/scripts/*.sh
+
+          cd bundle
+          aws deploy push \
+            --application-name dmz-frontend-app \
+            --s3-location s3://${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }}/frontend/${{ github.event.workflow_run.head_sha }}.zip \
+            --source .
+          aws deploy create-deployment \
+            --application-name dmz-frontend-app \
+            --deployment-group-name dmz-frontend-dg \
+            --s3-location bucket=${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }},key=frontend/${{ github.event.workflow_run.head_sha }}.zip,bundleType=zip
+
+  deploy-backend:
+    needs: read-outputs
+    if: needs.read-outputs.outputs.backend == 'true'
+    strategy:
+      matrix:
+        environment: [john]
+      fail-fast: false
+    runs-on: ubuntu-latest
+    environment: ${{ matrix.environment }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Write backend.env
+        run: |
+          mkdir -p bundle
+          cat > bundle/backend.env <<EOF
+          DATABASE_URL=${{ secrets.DATABASE_URL }}
+          REDIS_URL=${{ secrets.REDIS_URL }}
+          API_VERSION=${{ github.event.workflow_run.head_sha }}
+          DEBUG=false
+          SESSION_COOKIE_SECURE=true
+          EOF
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.DEPLOY_ROLE_ARN }}
+          aws-region: ap-northeast-2
+
+      - name: Assemble revision and trigger deployment
+        run: |
+          echo "${{ vars.DOCKERHUB_USERNAME }}/dmz-backend:${{ github.event.workflow_run.head_sha }}" > bundle/image.txt
+          cp deploy/backend/appspec.yml bundle/
+          cp -r deploy/backend/scripts bundle/
+          chmod +x bundle/scripts/*.sh
+
+          cd bundle
+          aws deploy push \
+            --application-name dmz-backend-app \
+            --s3-location s3://${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }}/backend/${{ github.event.workflow_run.head_sha }}.zip \
+            --source .
+          aws deploy create-deployment \
+            --application-name dmz-backend-app \
+            --deployment-group-name dmz-backend-dg \
+            --s3-location bucket=${{ vars.CODEDEPLOY_ARTIFACTS_BUCKET }},key=backend/${{ github.event.workflow_run.head_sha }}.zip,bundleType=zip
