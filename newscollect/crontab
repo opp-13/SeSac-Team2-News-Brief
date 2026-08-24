@@ -1,0 +1,5 @@
+# 컨테이너 TZ=Asia/Seoul 기준 07:00/12:00/17:00 (CLAUDE.md 배치 슬롯).
+# 출력을 /proc/1/fd/1로 보내 `docker logs`에서 보이게 한다 (cron 기본은 메일/무시).
+0 7  * * * root /app/run-slot.sh 0700 >> /proc/1/fd/1 2>&1
+0 12 * * * root /app/run-slot.sh 1200 >> /proc/1/fd/1 2>&1
+0 17 * * * root /app/run-slot.sh 1700 >> /proc/1/fd/1 2>&1

@@ -43,9 +43,7 @@ services:
     networks:
       - newsbrief-net
 
-  # 스키마는 Alembic으로만 만든다 (CLAUDE.md §2.1) -- schema.sql을 손으로 실행하지
-  # 않는다. `docker compose up`에 포함되지 않도록 profile로 분리해두고, 스키마가
-  # 바뀌었을 때만 명시적으로 `docker compose run --rm migrate`로 실행한다.
+  # backend로 스키마 삽입
   migrate:
     image: ${DOCKERHUB_USERNAME}/newsbrief-backend:${IMAGE_TAG:-latest}
     profiles: ["tools"]
@@ -96,6 +94,29 @@ services:
       BACKEND_PORT: "8000"
     ports:
       - "80:80"
+
+  # 서버가 아니라 크론 워커다 -- 컨테이너 내부 cron이 07:00/12:00/17:00(KST)에
+  # newscollect/run_slot.py를 직접 깨워서 그 슬롯의 카테고리를 수집한다
+  # (backend/app/batch/collect.py를 거치지 않는다, newscollect/README 참고).
+  newscollect:
+    image: ${DOCKERHUB_USERNAME}/newsbrief-newscollect:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    networks:
+      - newsbrief-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME:-news_ai}
+      FREENEWS_API_KEY: ${FREENEWS_API_KEY}
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GOOGLE_TRANSLATE_API_KEY: ${GOOGLE_TRANSLATE_API_KEY}
+      NCP_CLIENT_ID: ${NCP_CLIENT_ID}
+      NCP_CLIENT_SECRET: ${NCP_CLIENT_SECRET}
 
 volumes:
   mysql-data:
