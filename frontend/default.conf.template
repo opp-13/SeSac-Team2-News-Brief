@@ -24,9 +24,16 @@ server {
     # file lives under /etc/nginx/templates/, see Dockerfile) -- no rebuild
     # needed to point the same image at a different backend. Defaults come
     # from ENV in the Dockerfile; override with `docker run -e BACKEND_HOST=...`.
+    #
+    # proxy_pass must end at the authority (no trailing path) and forward via
+    # $request_uri instead. When proxy_pass's target is a variable, nginx
+    # can't do its usual location-prefix-replacement -- confirmed by testing
+    # that a trailing literal path here (e.g. .../api/) makes nginx forward
+    # every request as bare "/api/" and drop the rest of the URI, so the
+    # backend 404s on everything past the location prefix.
     location /api/ {
         set $backend_upstream ${BACKEND_HOST};
-        proxy_pass http://$backend_upstream:${BACKEND_PORT}/api/;
+        proxy_pass http://$backend_upstream:${BACKEND_PORT}$request_uri;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
