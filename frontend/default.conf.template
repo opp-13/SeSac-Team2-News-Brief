@@ -1,0 +1,35 @@
+server {
+    listen       80 default_server;
+    listen       [::]:80 default_server;
+    server_name  _;
+    root         /usr/share/nginx/html;
+
+    # React Router client-side routing -- fall back to index.html for
+    # any path that isn't a real static file.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # `resolver` + a variable forces nginx to resolve the backend hostname at
+    # REQUEST time instead of once at config-load/startup -- with a bare
+    # hostname in proxy_pass, nginx resolves it once at startup and refuses
+    # to start at all ("host not found in upstream") if that lookup fails,
+    # e.g. before the DNS record exists yet or during a transient blip.
+    # 127.0.0.11 is Docker's embedded per-container DNS, which forwards to
+    # whatever resolver the host is configured with -- the VPC's own DNS on
+    # EC2, or the sandbox's default resolver locally.
+    resolver 127.0.0.11 valid=10s;
+
+    # BACKEND_HOST/BACKEND_PORT are substituted at container startup (this
+    # file lives under /etc/nginx/templates/, see Dockerfile) -- no rebuild
+    # needed to point the same image at a different backend. Defaults come
+    # from ENV in the Dockerfile; override with `docker run -e BACKEND_HOST=...`.
+    location /api/ {
+        set $backend_upstream ${BACKEND_HOST};
+        proxy_pass http://$backend_upstream:${BACKEND_PORT}/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

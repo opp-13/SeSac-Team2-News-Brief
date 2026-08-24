@@ -14,5 +14,12 @@ ENV VITE_APP_VERSION=$VITE_APP_VERSION
 RUN npx vite build
 
 FROM nginx:alpine
-COPY nginx.conf /etc/nginx/nginx.conf
+# Template, not a static conf -- the base image's docker-entrypoint.d envsubst
+# step renders it to /etc/nginx/conf.d/default.conf at container *startup*,
+# substituting BACKEND_HOST/BACKEND_PORT from the environment. That lets one
+# image be pointed at a different backend per environment via `docker run -e`
+# instead of rebuilding.
+COPY default.conf.template /etc/nginx/templates/default.conf.template
+ENV BACKEND_HOST=api.team2.local
+ENV BACKEND_PORT=8000
 COPY --from=build /app/dist /usr/share/nginx/html
