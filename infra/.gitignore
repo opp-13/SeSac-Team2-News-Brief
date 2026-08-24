@@ -34,4 +34,5 @@ override.tf.json
 terraform.rc
 
 # 설치 스크립트 제외
-/modules/compute/scripts
+/modules/compute/scripts/install_mysql.sh
+/modules/compute/scripts/install_redis.sh
