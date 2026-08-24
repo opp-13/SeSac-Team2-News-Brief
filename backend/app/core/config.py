@@ -8,8 +8,9 @@
 """
 
 from functools import lru_cache
+from urllib.parse import quote_plus
 
-from pydantic import Field
+from pydantic import Field, computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -21,10 +22,27 @@ class Settings(BaseSettings):
     )
 
     # --- 필수 (기본값을 주지 않는다 — 누락 시 기동 시점에 바로 실패시킨다) ---
-    database_url: str = Field(
-        description="예: mysql+pymysql://user:pass@localhost:3306/news_ai?charset=utf8mb4",
-    )
+    # 커넥션 문자열 하나로 두지 않고 성분을 분리한다 — 비밀번호에 URL 특수문자가
+    # 섞여도(예: `@`, `:`, `/`) 조립 시점에 quote_plus로 이스케이프하므로 안전하고,
+    # 배포 환경에서 비밀번호만 시크릿으로 따로 주입하기도 쉽다.
+    db_host: str = Field(description="예: localhost, db.team2.local")
+    db_user: str
+    db_password: str
+    db_name: str = "news_ai"
+    db_port: int = 3306
+    db_charset: str = "utf8mb4"
+
     redis_url: str = Field(description="예: redis://localhost:6379/0")
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def database_url(self) -> str:
+        user = quote_plus(self.db_user)
+        password = quote_plus(self.db_password)
+        return (
+            f"mysql+pymysql://{user}:{password}@{self.db_host}:{self.db_port}"
+            f"/{self.db_name}?charset={self.db_charset}"
+        )
 
     # --- 앱 ---
     app_name: str = "NewsBrief API"
