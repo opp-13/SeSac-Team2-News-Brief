@@ -1,0 +1,480 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: newsbrief
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: newsbrief-config
+  namespace: newsbrief
+data:
+  DB_HOST: "mysql"
+  DB_PORT: "3306"
+  DB_NAME: "news_ai"
+  DB_CHARSET: "utf8mb4"
+  REDIS_URL: "redis://redis:6379/0"
+  API_VERSION: "latest" # CI에서 git sha로 덮어쓰는 것을 권장 (workflows/deploy.yml 참고)
+  DEBUG: "false"
+  SESSION_TTL_SECONDS: "604800"
+  SESSION_COOKIE_SECURE: "true" # Gateway가 TLS를 종료하므로 안전 — 항상 https로만 들어온다
+  SCHEDULER_ENABLED: "false" # 의도적으로 켜기 전까지 유지 (위 전제 참고)
+  CURATE_OFFSET_MINUTES: "30"
+  COLLECT_PROVIDER: "freenews"
+  COLLECT_DISPLAY: "2"
+  COLLECT_LANGUAGE: "en"
+  COLLECT_TIMEOUT_SECONDS: "300"
+  GROQ_DAILY_TOKEN_BUDGET: "200000"
+  GROQ_TOKENS_PER_ARTICLE: "1200"
+  BACKEND_HOST: "backend"
+  BACKEND_PORT: "8000"
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: newsbrief-db-secret
+  namespace: newsbrief
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: "CHANGE_ME"
+  DB_USER: "CHANGE_ME"
+  DB_PASSWORD: "CHANGE_ME"
+# CHANGE_ME
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: newsbrief-collector-secret
+  namespace: newsbrief
+type: Opaque
+stringData:
+  FREENEWS_API_KEY: "CHANGE_ME"
+  GROQ_API_KEY: "CHANGE_ME"
+  GOOGLE_TRANSLATE_API_KEY: "CHANGE_ME"
+  NCP_CLIENT_ID: "CHANGE_ME"
+  NCP_CLIENT_SECRET: "CHANGE_ME"
+
+---
+# 헤드리스 Service — StatefulSet의 serviceName이 요구하며, 파드가 하나뿐이어도
+# "mysql" DNS 이름으로 그대로 풀린다.
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: newsbrief
+spec:
+  clusterIP: None
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  namespace: newsbrief
+spec:
+  serviceName: mysql
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          args:
+            - --character-set-server=utf8mb4
+            - --collation-server=utf8mb4_0900_ai_ci
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: MYSQL_ROOT_PASSWORD
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: newsbrief-config
+                  key: DB_NAME
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_PASSWORD
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          readinessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            exec:
+              command: ["mysqladmin", "ping", "-h", "localhost", "-uroot", "-p$(MYSQL_ROOT_PASSWORD)"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 1Gi
+  volumeClaimTemplates:
+    - metadata:
+        name: mysql-data
+      spec:
+        storageClassName: ceph # 클러스터에 기본 StorageClass가 없어서 명시 (kubectl get sc 기준)
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis
+  namespace: newsbrief
+spec:
+  selector:
+    app: redis
+  ports:
+    - port: 6379
+      targetPort: 6379
+
+---
+# 세션/캐시 전용 (CLAUDE.md §8-6) — 영속 볼륨을 두지 않는다. compose와 동일하게
+# 재시작 시 세션/캐시가 비는 것을 감수한다.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  namespace: newsbrief
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis
+  template:
+    metadata:
+      labels:
+        app: redis
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: newsbrief-migrate
+  namespace: newsbrief
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: opp13/newsbrief-backend:fi
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: newsbrief-config
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_PASSWORD
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: newsbrief
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: newsbrief
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: opp13/newsbrief-backend:fi
+          ports:
+            - containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: newsbrief-config
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+  namespace: newsbrief
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: 80
+      targetPort: 80
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: newsbrief
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+        - name: frontend
+          image: opp13/newsbrief-frontend:fi 
+          ports:
+            - containerPort: 80
+          env:
+            - name: BACKEND_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: newsbrief-config
+                  key: BACKEND_HOST
+            - name: BACKEND_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: newsbrief-config
+                  key: BACKEND_PORT
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: newsbrief-collect
+  namespace: newsbrief
+spec:
+  backoffLimit: 2
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: newscollect
+          image: opp13/newsbrief-newscollect:fi
+          command: ["sh", "-c", "python3 run_slot.py 0700 && python3 run_slot.py 1200 && python3 run_slot.py 1700"]
+          envFrom:
+            - configMapRef:
+                name: newsbrief-config
+            - secretRef:
+                name: newsbrief-collector-secret
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: newsbrief-db-secret
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 1
+              memory: 1500Mi # torch/sentence-transformers 로딩 여유 — 실측 후 조정
+
+---
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: Gateway
+metadata:
+  name: newsbrief
+  namespace: newsbrief
+spec:
+  gatewayClassName: eg
+  listeners:
+    - name: http
+      port: 80
+      protocol: HTTP
+      hostname: www.s6john.cloud 
+      allowedRoutes:
+        namespaces:
+          from: Same
+    - name: https
+      port: 443
+      protocol: HTTPS
+      hostname: www.s6john.cloud
+      tls:
+        mode: Terminate
+        certificateRefs:
+          - kind: Secret
+            name: newsbrief-tls # 위 안내대로 직접 생성 — 이 파일이 만들지 않는다
+      allowedRoutes:
+        namespaces:
+          from: Same
+
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: newsbrief-http-redirect
+  namespace: newsbrief
+spec:
+  parentRefs:
+    - name: newsbrief
+      sectionName: http
+  rules:
+    - filters:
+        - type: RequestRedirect
+          requestRedirect:
+            scheme: https
+            statusCode: 301
+
+---
+
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: newsbrief-app
+  namespace: newsbrief
+spec:
+  parentRefs:
+    - name: newsbrief
+      sectionName: https
+  rules:
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /api
+      backendRefs:
+        - name: backend
+          port: 8000
+    - matches:
+        - path:
+            type: PathPrefix
+            value: /
+      backendRefs:
+        - name: frontend
+          port: 80
