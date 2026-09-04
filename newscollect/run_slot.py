@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 import pymysql
 
@@ -57,7 +57,7 @@ def categories_for_slot(slugs: list[str], slot: str, slots: list[str]) -> list[s
 
 
 def tokens_spent_today(conn, tokens_per_article: int) -> int:
-    """오늘 이미 쓴 Groq 토큰 추정치 (건수 × 건당 추정치, 항상 과소 추정)."""
+    """오늘 이미 쓴 Groq 토큰 추정치 (건수 x 건당 추정치, 항상 과소 추정)."""
     with conn.cursor() as cur:
         cur.execute("SELECT COUNT(*) FROM summaries WHERE DATE(created_at) = %s", (date.today(),))
         count = cur.fetchone()[0]
@@ -90,7 +90,7 @@ def main() -> int:
 
     env = dict(os.environ)
     env["BATCH_SLOT"] = slot
-    env["BATCH_DATE"] = datetime.now(timezone.utc).date().isoformat()
+    env["BATCH_DATE"] = datetime.now(UTC).date().isoformat()
 
     failed: list[str] = []
     skipped: list[str] = []
